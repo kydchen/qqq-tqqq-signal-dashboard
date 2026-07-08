@@ -386,6 +386,7 @@ function renderMarket() {
 
   const decision = marketData.decision;
   const text = t.decisions[decision.key];
+  $("decisionPanel").style.setProperty("--decision-color", actionVisuals[decision.key]?.color || colors.signal);
   $("action").textContent = text[0];
   $("operation").textContent = text[1];
   $("risk").textContent = text[2];

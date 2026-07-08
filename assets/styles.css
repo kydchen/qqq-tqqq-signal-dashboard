@@ -220,8 +220,7 @@ h2 {
   border-top: 1px solid var(--line);
 }
 
-.tile-detail summary {
-  cursor: pointer;
+.tile-detail-label {
   color: var(--blue);
   font-size: 13px;
   font-weight: 760;
@@ -265,7 +264,7 @@ h2 {
   grid-template-columns: minmax(210px, .42fr) minmax(0, 1fr);
   gap: 20px;
   padding: 20px;
-  border-left: 6px solid var(--blue);
+  border-left: 6px solid var(--decision-color, var(--blue));
 }
 
 .operation {

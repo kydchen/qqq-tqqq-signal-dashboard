@@ -30,10 +30,10 @@
         </div>
         <strong id="capeValue" class="metric">--</strong>
         <p id="capeNote" class="muted">--</p>
-        <details class="tile-detail">
-          <summary id="capeHistoryLabel">近 12 个月（月频）</summary>
+        <div class="tile-detail">
+          <div id="capeHistoryLabel" class="tile-detail-label">近 12 个月（月频）</div>
           <div id="capeSparkline" class="sparkline"></div>
-        </details>
+        </div>
       </article>
       <article class="tile">
         <div class="tile-head">
@@ -42,10 +42,10 @@
         </div>
         <strong id="ddValue" class="metric">--</strong>
         <p id="ddNote" class="muted">--</p>
-        <details class="tile-detail">
-          <summary id="ddHistoryLabel">近 5 个交易日</summary>
+        <div class="tile-detail">
+          <div id="ddHistoryLabel" class="tile-detail-label">近 5 个交易日</div>
           <div id="ddSparkline" class="sparkline"></div>
-        </details>
+        </div>
       </article>
       <article class="tile">
         <div class="tile-head">
@@ -54,14 +54,14 @@
         </div>
         <strong id="vixValue" class="metric">--</strong>
         <p id="vixNote" class="muted">--</p>
-        <details class="tile-detail">
-          <summary id="vixHistoryLabel">近 5 个交易日</summary>
+        <div class="tile-detail">
+          <div id="vixHistoryLabel" class="tile-detail-label">近 5 个交易日</div>
           <div id="vixSparkline" class="sparkline"></div>
-        </details>
+        </div>
       </article>
     </section>
 
-    <section class="decision-panel">
+    <section id="decisionPanel" class="decision-panel">
       <div>
         <p id="decisionKicker" class="eyebrow">建议操作</p>
         <h2 id="action">加载中</h2>
