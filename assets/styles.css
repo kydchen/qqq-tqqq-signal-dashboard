@@ -48,6 +48,17 @@ button:disabled {
   cursor: wait;
 }
 
+button.ghost {
+  background: #fff;
+  color: var(--ink);
+}
+
+button.ghost.active {
+  background: var(--violet);
+  border-color: var(--violet);
+  color: #fff;
+}
+
 .shell {
   width: min(1180px, calc(100vw - 32px));
   margin: 0 auto;
@@ -128,6 +139,7 @@ h2 {
 .tile,
 .decision-panel,
 .method-panel,
+.actions-panel,
 .backtest-panel,
 .sources-panel,
 .error {
@@ -219,6 +231,7 @@ h2 {
 }
 
 .method-panel,
+.actions-panel,
 .backtest-panel,
 .sources-panel {
   margin-top: 16px;
@@ -242,6 +255,55 @@ h2 {
   gap: 14px;
 }
 
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.action-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 13px;
+  background: #fbfcfe;
+}
+
+.action-icon,
+.action-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--cash);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 820;
+  font-variant-numeric: tabular-nums;
+}
+
+.action-card h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.action-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.action-card .condition {
+  margin-bottom: 4px;
+  color: var(--ink);
+  font-weight: 680;
+}
+
 .method-card {
   border-top: 4px solid var(--blue);
   padding: 14px 0 0;
@@ -261,7 +323,7 @@ h2 {
 
 .backtest-controls {
   display: grid;
-  grid-template-columns: 150px 160px minmax(220px, 1fr) 128px;
+  grid-template-columns: 150px 160px minmax(220px, 1fr) 144px 128px;
   gap: 12px;
   align-items: end;
   margin-bottom: 14px;
@@ -312,6 +374,25 @@ select {
   margin-bottom: 12px;
 }
 
+.action-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .strategy {
   display: inline-flex;
   align-items: center;
@@ -342,6 +423,35 @@ select {
   border-radius: 8px;
   background: #fbfcfe;
   overflow: hidden;
+}
+
+.action-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 28px;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 10px 0 4px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.action-strip[hidden],
+.action-legend[hidden] {
+  display: none;
+}
+
+.action-dot {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  min-height: 24px;
+  font-size: 10px;
+  cursor: default;
 }
 
 canvas {
@@ -420,6 +530,7 @@ canvas {
   }
   .market-grid,
   .method-grid,
+  .action-grid,
   .metrics-grid,
   .backtest-controls {
     grid-template-columns: 1fr;

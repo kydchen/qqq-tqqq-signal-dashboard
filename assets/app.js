@@ -7,6 +7,16 @@ const colors = {
   signal: "#6d28d9",
 };
 
+const actionOrder = ["bottomAttack", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"];
+const actionVisuals = {
+  bottomAttack: { icon: "T", color: "#b42318" },
+  smallDipBuy: { icon: "Q", color: "#0f766e" },
+  crashDefense: { icon: "1/2", color: "#7f1d1d" },
+  trimHeat: { icon: "-T", color: "#b45309" },
+  pauseAtHigh: { icon: "$", color: "#475467" },
+  normalDca: { icon: "Q", color: "#1d4ed8" },
+};
+
 const copy = {
   zh: {
     eyebrow: "QQQ / TQQQ",
@@ -22,11 +32,16 @@ const copy = {
     vixLabel: "VIX 5 日均值",
     methodKicker: "计算方法",
     methodTitle: "三类信号，按月决策",
+    actionCatalogKicker: "动作清单",
+    actionCatalogTitle: "三信号策略会做什么",
+    actionCatalogNote: "按优先级从上到下判断，先命中的动作会执行。只有三信号策略会卖出；QQQ、TQQQ、80/20 三个基准策略只按月买入，不卖出。",
     backtestKicker: "收益回测",
     backtestTitle: "比较不同定投方式",
     startLabel: "起始时间",
     monthlyLabel: "每月投入",
     trendLabel: "显示 log 趋势拟合线",
+    actionMarkersLabel: "显示月度动作",
+    hideActionMarkersLabel: "隐藏月度动作",
     backtestNote: "回测使用 Nasdaq-100 指数代理 QQQ；TQQQ 用 3x 日收益再平衡合成，未扣除基金费、税费、滑点和股息。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。信号策略使用相同月投入，只改变买入、卖出和现金仓节奏。",
     sources: "数据源：",
     error: "数据加载失败：",
@@ -45,12 +60,20 @@ const copy = {
       }
     ],
     decisions: {
-      bottomAttack: ["大底进攻", "现金仓全部买入 TQQQ；新增资金也买 TQQQ。后续 6 个月分批把 TQQQ 加到你的预设上限。", "只在预设上限内执行，TQQQ 不应变成永久主仓。"],
-      smallDipBuy: ["小底加仓", "新增资金买 QQQ；如果已有现金仓，可拿一半现金买 QQQ，另一半等待更强信号。", "这是折扣区，不是梭哈区。"],
+      bottomAttack: ["大底进攻", "现金仓全部买入 TQQQ；新增资金也买 TQQQ。", "这是低估、深跌、恐慌共振时才触发的进攻动作。"],
+      smallDipBuy: ["小底加仓", "拿当前现金仓的一半买 QQQ，另一半继续等待更强信号。", "这是折扣区，不是梭哈区。"],
       crashDefense: ["快崩风控", "卖出约一半 TQQQ，转入现金仓，等低位信号共振再打回。", "快崩阶段先活下来，再考虑抄底。"],
       pauseAtHigh: ["高位暂停", "本月暂停新增 QQQ/TQQQ 买入，新增资金进入现金仓。", "高估且贴近新高时，策略赚的是耐心，不是追涨。"],
-      trimHeat: ["过热锁利", "每月卖出约 1/12 TQQQ，保留底仓，资金回到现金仓。", "这是降低路径风险，不是看空全部美股。"],
+      trimHeat: ["过热锁利", "卖出约 1/12 TQQQ，新增资金也进入现金仓。", "这是降低路径风险，不是看空全部美股。"],
       normalDca: ["正常定投", "按 1x 买 QQQ；如果有现金仓，可按每月 1/6 的节奏慢慢买回 QQQ。", "没有低位信号时，不主动放大杠杆。"],
+    },
+    actions: {
+      bottomAttack: { title: "大底进攻", condition: "2-3 个低位信号同时亮", operation: "现金仓 + 当月新增资金全部买 TQQQ" },
+      smallDipBuy: { title: "小底加仓", condition: "只有 1 个低位信号亮", operation: "当前现金仓的一半买 QQQ，另一半保留" },
+      crashDefense: { title: "快崩风控", condition: "25 日跌幅 <= -12%，且没有低位共振", operation: "卖出约 1/2 TQQQ，转现金" },
+      trimHeat: { title: "过热锁利", condition: "CAPE >= 85% 或 VIX <= 12", operation: "卖出约 1/12 TQQQ，新增资金留现金" },
+      pauseAtHigh: { title: "高位暂停", condition: "CAPE >= 70% 且指数距高点 < 5%", operation: "不买 QQQ/TQQQ，当月资金留现金" },
+      normalDca: { title: "正常定投", condition: "没有触发以上任何动作", operation: "买 QQQ；现金仓按 1/6 节奏滴灌回 QQQ" },
     },
     chips: {
       valuationCheap: "估值便宜",
@@ -93,11 +116,16 @@ const copy = {
     vixLabel: "VIX 5-day average",
     methodKicker: "Method",
     methodTitle: "Three monthly signals",
+    actionCatalogKicker: "Action list",
+    actionCatalogTitle: "What the signal strategy can do",
+    actionCatalogNote: "Rules are evaluated from top to bottom; the first match executes. Only the three-signal strategy sells. QQQ, TQQQ, and 80/20 benchmarks only buy monthly and never sell.",
     backtestKicker: "Return backtest",
     backtestTitle: "Compare DCA variants",
     startLabel: "Start date",
     monthlyLabel: "Monthly buy",
     trendLabel: "Show log trend fit",
+    actionMarkersLabel: "Show monthly actions",
+    hideActionMarkersLabel: "Hide monthly actions",
     backtestNote: "Backtest uses Nasdaq-100 as a QQQ proxy. TQQQ is synthesized from 3x daily Nasdaq-100 returns before fees, taxes, slippage, and dividends. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings. The signal strategy uses the same monthly contribution and changes only buy, sell, and cash timing.",
     sources: "Sources: ",
     error: "Data load failed: ",
@@ -116,12 +144,20 @@ const copy = {
       }
     ],
     decisions: {
-      bottomAttack: ["Bottom attack", "Deploy all cash into TQQQ; put new money into TQQQ too. Over the next 6 months, scale TQQQ toward your preset cap.", "Stay inside the cap. TQQQ should not become a permanent core position."],
-      smallDipBuy: ["Small dip buy", "Buy QQQ with new money. If cash is available, deploy half into QQQ and keep half for stronger signals.", "This is a discount zone, not an all-in signal."],
+      bottomAttack: ["Bottom attack", "Deploy all cash into TQQQ; put new money into TQQQ too.", "This only fires when cheap valuation, deep drawdown, and panic start to converge."],
+      smallDipBuy: ["Small dip buy", "Use half of current cash to buy QQQ and keep the other half for stronger signals.", "This is a discount zone, not an all-in signal."],
       crashDefense: ["Fast-crash defense", "Sell about half of TQQQ into cash, then wait for low signals to converge before redeploying.", "Survive the fast crash before trying to catch the bottom."],
       pauseAtHigh: ["Pause at high", "Pause new QQQ/TQQQ buying this month. Route new money to cash.", "When valuation is high near the index high, patience is the edge."],
-      trimHeat: ["Trim heat", "Sell about 1/12 of TQQQ each month, keep a floor position, and move proceeds to cash.", "This lowers path risk; it is not an all-equity bearish call."],
+      trimHeat: ["Trim heat", "Sell about 1/12 of TQQQ and route new money to cash.", "This lowers path risk; it is not an all-equity bearish call."],
       normalDca: ["Normal DCA", "Buy QQQ at 1x pace. If cash exists, drip about 1/6 of it back into QQQ each month.", "Without low signals, do not add leverage."],
+    },
+    actions: {
+      bottomAttack: { title: "Bottom attack", condition: "2-3 low signals are on", operation: "Deploy cash + monthly contribution into TQQQ" },
+      smallDipBuy: { title: "Small dip buy", condition: "Exactly 1 low signal is on", operation: "Use half of current cash to buy QQQ" },
+      crashDefense: { title: "Fast-crash defense", condition: "25-day drop <= -12%, without low-signal convergence", operation: "Sell about 1/2 of TQQQ into cash" },
+      trimHeat: { title: "Trim heat", condition: "CAPE >= 85% or VIX <= 12", operation: "Sell about 1/12 of TQQQ; keep new money in cash" },
+      pauseAtHigh: { title: "Pause at high", condition: "CAPE >= 70% and index is within 5% of its high", operation: "Do not buy QQQ/TQQQ; hold monthly cash" },
+      normalDca: { title: "Normal DCA", condition: "No higher-priority rule fires", operation: "Buy QQQ; drip 1/6 of cash back into QQQ" },
     },
     chips: {
       valuationCheap: "Cheap valuation",
@@ -156,6 +192,7 @@ let lang = "zh";
 let marketData = null;
 let backtestData = null;
 let selected = new Set(["qqq", "tqqq", "signal"]);
+let showActionMarkers = false;
 
 function fmtPct(n, digits = 1) {
   return `${Number(n).toFixed(digits)}%`;
@@ -188,11 +225,16 @@ function renderStatic() {
   $("vixLabel").textContent = t.vixLabel;
   $("methodKicker").textContent = t.methodKicker;
   $("methodTitle").textContent = t.methodTitle;
+  $("actionCatalogKicker").textContent = t.actionCatalogKicker;
+  $("actionCatalogTitle").textContent = t.actionCatalogTitle;
+  $("actionCatalogNote").textContent = t.actionCatalogNote;
   $("backtestKicker").textContent = t.backtestKicker;
   $("backtestTitle").textContent = t.backtestTitle;
   $("startLabel").textContent = t.startLabel;
   $("monthlyLabel").textContent = t.monthlyLabel;
   $("trendLabel").textContent = t.trendLabel;
+  $("actionsToggleBtn").textContent = showActionMarkers ? t.hideActionMarkersLabel : t.actionMarkersLabel;
+  $("actionsToggleBtn").classList.toggle("active", showActionMarkers);
   $("backtestNote").textContent = t.backtestNote;
   $("zhBtn").classList.toggle("active", lang === "zh");
   $("enBtn").classList.toggle("active", lang === "en");
@@ -204,6 +246,8 @@ function renderStatic() {
     return card;
   }));
 
+  renderActionCatalog();
+  renderActionLegend();
   if (!marketData) {
     $("action").textContent = t.loadingAction;
     $("operation").textContent = t.loadingOperation;
@@ -211,6 +255,39 @@ function renderStatic() {
   renderMarket();
   renderStrategyToggles();
   renderBacktest();
+}
+
+function renderActionCatalog() {
+  const t = copy[lang];
+  $("actionCatalog").replaceChildren(...actionOrder.map((key) => {
+    const action = t.actions[key];
+    const visual = actionVisuals[key];
+    const card = document.createElement("article");
+    card.className = "action-card";
+    card.innerHTML = `
+      <span class="action-icon" style="background:${visual.color}">${visual.icon}</span>
+      <div>
+        <h3>${action.title}</h3>
+        <p class="condition">${action.condition}</p>
+        <p>${action.operation}</p>
+      </div>
+    `;
+    return card;
+  }));
+}
+
+function renderActionLegend() {
+  const t = copy[lang];
+  $("actionLegend").hidden = !showActionMarkers;
+  if (!showActionMarkers) return;
+  $("actionLegend").replaceChildren(...actionOrder.map((key) => {
+    const action = t.actions[key];
+    const visual = actionVisuals[key];
+    const item = document.createElement("span");
+    item.className = "legend-item";
+    item.innerHTML = `<span class="action-dot" style="background:${visual.color}">${visual.icon}</span><span>${action.title}</span>`;
+    return item;
+  }));
 }
 
 function chip(label, on) {
@@ -276,6 +353,7 @@ function renderStrategyToggles() {
 function renderBacktest() {
   if (!backtestData) return;
   renderChart();
+  renderActionStrip();
   const t = copy[lang];
   const cards = backtestData.strategies.map((strategy) => {
     const card = document.createElement("article");
@@ -291,6 +369,25 @@ function renderBacktest() {
     return card;
   });
   $("metrics").replaceChildren(...cards);
+}
+
+function renderActionStrip() {
+  $("actionStrip").hidden = !showActionMarkers || !backtestData;
+  if (!showActionMarkers || !backtestData) return;
+  const t = copy[lang];
+  const signal = backtestData.strategies.find((strategy) => strategy.key === "signal");
+  if (!signal) return;
+  $("actionStrip").replaceChildren(...signal.points.map((point) => {
+    const visual = actionVisuals[point.actionKey] || actionVisuals.normalDca;
+    const action = t.actions[point.actionKey] || t.actions.normalDca;
+    const button = document.createElement("button");
+    button.className = "action-dot";
+    button.type = "button";
+    button.style.background = visual.color;
+    button.textContent = visual.icon;
+    button.title = `${point.date} · ${action.title} · ${action.operation}`;
+    return button;
+  }));
 }
 
 function chartBounds(strategies) {
@@ -386,6 +483,21 @@ function renderChart() {
     }
   }
 
+  if (showActionMarkers && selected.has("signal")) {
+    const signal = backtestData.strategies.find((strategy) => strategy.key === "signal");
+    if (signal) {
+      const markerY = height - pad.bottom - 9;
+      signal.points.forEach((point, i) => {
+        const visual = actionVisuals[point.actionKey] || actionVisuals.normalDca;
+        const x = xFor(i);
+        ctx.fillStyle = visual.color;
+        ctx.beginPath();
+        ctx.arc(x, markerY, 4, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+  }
+
   canvas.onmousemove = (event) => {
     const chartRect = canvas.getBoundingClientRect();
     const x = event.clientX - chartRect.left;
@@ -394,12 +506,15 @@ function renderChart() {
       return;
     }
     const index = Math.max(0, Math.min(pointCount - 1, Math.round(((x - pad.left) / plotW) * (pointCount - 1))));
+    const signalPoint = backtestData.strategies.find((strategy) => strategy.key === "signal")?.points[index];
+    const action = signalPoint?.actionKey ? copy[lang].actions[signalPoint.actionKey] : null;
+    const actionRow = showActionMarkers && action ? `<div><strong>${copy[lang].strategies.signal}</strong>: ${action.title}</div>` : "";
     const rows = strategies.map((strategy) => {
       const point = strategy.points[index];
       return `<div><span style="color:${colors[strategy.key]}">●</span> ${copy[lang].strategies[strategy.key]}: <strong>${fmtMoney(point.value)}</strong></div>`;
     }).join("");
     const tip = $("tooltip");
-    tip.innerHTML = `<strong>${strategies[0].points[index].date}</strong>${rows}`;
+    tip.innerHTML = `<strong>${strategies[0].points[index].date}</strong>${actionRow}${rows}`;
     tip.hidden = false;
     tip.style.left = `${Math.min(width - 300, Math.max(8, x + 14))}px`;
     tip.style.top = `${Math.max(8, event.clientY - chartRect.top - 20)}px`;
@@ -445,6 +560,14 @@ $("enBtn").addEventListener("click", () => { lang = "en"; renderStatic(); });
 $("refreshBtn").addEventListener("click", loadAll);
 $("runBtn").addEventListener("click", loadBacktest);
 $("trendInput").addEventListener("change", renderBacktest);
+$("actionsToggleBtn").addEventListener("click", () => {
+  showActionMarkers = !showActionMarkers;
+  const t = copy[lang];
+  $("actionsToggleBtn").textContent = showActionMarkers ? t.hideActionMarkersLabel : t.actionMarkersLabel;
+  $("actionsToggleBtn").classList.toggle("active", showActionMarkers);
+  renderActionLegend();
+  renderBacktest();
+});
 window.addEventListener("resize", () => { if (backtestData) renderChart(); });
 
 renderStatic();

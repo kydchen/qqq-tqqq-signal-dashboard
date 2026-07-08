@@ -68,6 +68,15 @@
       <div id="methods" class="method-grid"></div>
     </section>
 
+    <section class="actions-panel">
+      <div class="section-head">
+        <p id="actionCatalogKicker" class="eyebrow">动作清单</p>
+        <h2 id="actionCatalogTitle">三信号策略会做什么</h2>
+        <p id="actionCatalogNote" class="muted"></p>
+      </div>
+      <div id="actionCatalog" class="action-grid"></div>
+    </section>
+
     <section class="backtest-panel">
       <div class="section-head split">
         <div>
@@ -96,16 +105,19 @@
         </label>
         <label class="checkline">
           <input id="trendInput" type="checkbox" checked />
-          <span id="trendLabel">显示 log 回归趋势线</span>
+          <span id="trendLabel">显示 log 趋势拟合线</span>
         </label>
+        <button id="actionsToggleBtn" class="ghost" type="button">显示月度动作</button>
         <button id="runBtn" type="button">运行回测</button>
       </div>
 
       <div id="strategyToggles" class="strategy-toggles"></div>
+      <div id="actionLegend" class="action-legend" hidden></div>
       <div class="chart-wrap">
         <canvas id="equityChart" width="1100" height="520"></canvas>
         <div id="tooltip" class="tooltip" hidden></div>
       </div>
+      <div id="actionStrip" class="action-strip" hidden></div>
       <div id="metrics" class="metrics-grid"></div>
       <p id="backtestNote" class="small-note"></p>
     </section>

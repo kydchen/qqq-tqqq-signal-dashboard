@@ -114,8 +114,8 @@ function calculateDecision(state) {
   if (lowSignalCount >= 2) key = "bottomAttack";
   else if (lowSignalCount === 1) key = "smallDipBuy";
   else if (defensiveFlags.fastCrash) key = "crashDefense";
-  else if (defensiveFlags.valuationHigh && defensiveFlags.nearHigh) key = "pauseAtHigh";
   else if (defensiveFlags.bubbleWatch || defensiveFlags.quietVix) key = "trimHeat";
+  else if (defensiveFlags.valuationHigh && defensiveFlags.nearHigh) key = "pauseAtHigh";
   return { key, lowSignalCount, lowSignals, defensiveFlags };
 }
 
@@ -205,7 +205,7 @@ function sellTQQQ(portfolio, fraction, price) {
   portfolio.cash += shares * price;
 }
 
-function record(portfolio, key, prices, startTime) {
+function record(portfolio, prices, startTime, actionKey = null) {
   const value = valueOf(portfolio, prices);
   portfolio.peak = Math.max(portfolio.peak, value);
   if (portfolio.peak > 0) portfolio.maxDrawdown = Math.min(portfolio.maxDrawdown, value / portfolio.peak - 1);
@@ -213,6 +213,7 @@ function record(portfolio, key, prices, startTime) {
     date: prices.date,
     value,
     year: (new Date(`${prices.date}T00:00:00Z`).getTime() - startTime) / (365.25 * 24 * 3600 * 1000),
+    actionKey,
   });
 }
 
@@ -321,7 +322,7 @@ async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
     }
 
     for (const [key, portfolio] of Object.entries(portfolios)) {
-      record(portfolio, key, price, startTime);
+      record(portfolio, price, startTime, key === "signal" ? decision.key : null);
     }
   }
 
