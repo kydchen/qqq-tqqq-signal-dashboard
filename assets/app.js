@@ -26,8 +26,8 @@ const copy = {
     backtestTitle: "比较不同定投方式",
     startLabel: "起始时间",
     monthlyLabel: "每月投入",
-    trendLabel: "显示 log 回归趋势线",
-    backtestNote: "回测使用 Nasdaq-100 指数代理 QQQ；TQQQ 用 3x 日收益再平衡合成，未扣除基金费、税费、滑点和股息。信号策略使用相同月投入，只改变买入、卖出和现金仓节奏。",
+    trendLabel: "显示 log 趋势拟合线",
+    backtestNote: "回测使用 Nasdaq-100 指数代理 QQQ；TQQQ 用 3x 日收益再平衡合成，未扣除基金费、税费、滑点和股息。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。信号策略使用相同月投入，只改变买入、卖出和现金仓节奏。",
     sources: "数据源：",
     error: "数据加载失败：",
     methods: [
@@ -64,7 +64,7 @@ const copy = {
     strategies: {
       qqq: "QQQ 定投",
       tqqq: "TQQQ 定投",
-      blend8020: "80/20 定投",
+      blend8020: "80% QQQ / 20% TQQQ 定投",
       signal: "三信号策略",
     },
     metricLabels: {
@@ -72,7 +72,7 @@ const copy = {
       multiple: "投入倍数",
       irr: "IRR",
       maxDrawdown: "最大回撤",
-      regression: "log 回归年化",
+      regression: "log 趋势年化",
     },
     meta: (data) => `生成时间 ${data.generatedAt}；CAPE 日期 ${data.indicators.cape.date}；纳指最新日期 ${data.indicators.nasdaq100.date}；低位信号 ${data.decision.lowSignalCount}/3。`,
     capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}；样本 ${cape.historyCount} 个月。`,
@@ -97,8 +97,8 @@ const copy = {
     backtestTitle: "Compare DCA variants",
     startLabel: "Start date",
     monthlyLabel: "Monthly buy",
-    trendLabel: "Show log regression trend",
-    backtestNote: "Backtest uses Nasdaq-100 as a QQQ proxy. TQQQ is synthesized from 3x daily Nasdaq-100 returns before fees, taxes, slippage, and dividends. The signal strategy uses the same monthly contribution and changes only buy, sell, and cash timing.",
+    trendLabel: "Show log trend fit",
+    backtestNote: "Backtest uses Nasdaq-100 as a QQQ proxy. TQQQ is synthesized from 3x daily Nasdaq-100 returns before fees, taxes, slippage, and dividends. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings. The signal strategy uses the same monthly contribution and changes only buy, sell, and cash timing.",
     sources: "Sources: ",
     error: "Data load failed: ",
     methods: [
@@ -135,7 +135,7 @@ const copy = {
     strategies: {
       qqq: "QQQ DCA",
       tqqq: "TQQQ DCA",
-      blend8020: "80/20 DCA",
+      blend8020: "80% QQQ / 20% TQQQ DCA",
       signal: "Three-signal",
     },
     metricLabels: {
@@ -143,7 +143,7 @@ const copy = {
       multiple: "Multiple",
       irr: "IRR",
       maxDrawdown: "Max drawdown",
-      regression: "Log-reg annualized",
+      regression: "Log-trend annualized",
     },
     meta: (data) => `Generated ${data.generatedAt}; CAPE date ${data.indicators.cape.date}; Nasdaq latest ${data.indicators.nasdaq100.date}; low signals ${data.decision.lowSignalCount}/3.`,
     capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}; ${cape.historyCount} monthly observations.`,
