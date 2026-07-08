@@ -21,6 +21,9 @@ async function main() {
     assert(Number.isFinite(strategy.regression.annualized));
   }
   assert(result.strategies.find((strategy) => strategy.key === "signal").points.every((point) => point.actionKey));
+
+  const shortResult = await backtest({ start: "2025-01", monthly: "1000" });
+  assert(shortResult.strategies.every((strategy) => strategy.regression.annualized == null));
   console.log("check ok");
 }
 

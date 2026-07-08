@@ -97,6 +97,7 @@ const copy = {
       irr: "IRR",
       maxDrawdown: "最大回撤",
       regression: "log 趋势年化",
+      shortSample: "样本太短",
     },
     meta: (data) => `生成时间 ${data.generatedAt}；CAPE 日期 ${data.indicators.cape.date}；纳指最新日期 ${data.indicators.nasdaq100.date}；低位信号 ${data.decision.lowSignalCount}/3。`,
     capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}；样本 ${cape.historyCount} 个月。`,
@@ -179,6 +180,7 @@ const copy = {
       irr: "IRR",
       maxDrawdown: "Max drawdown",
       regression: "Log-trend annualized",
+      shortSample: "Too short",
     },
     meta: (data) => `Generated ${data.generatedAt}; CAPE date ${data.indicators.cape.date}; Nasdaq latest ${data.indicators.nasdaq100.date}; low signals ${data.decision.lowSignalCount}/3.`,
     capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}; ${cape.historyCount} monthly observations.`,
@@ -203,6 +205,10 @@ function fmtMoney(n) {
 
 function fmtNumber(n, digits = 1) {
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits });
+}
+
+function hasRegression(strategy) {
+  return Number.isFinite(strategy.regression?.annualized);
 }
 
 function setDot(id, cls) {
@@ -345,7 +351,7 @@ function renderBacktest() {
       <div class="metric-row"><span>${t.metricLabels.multiple}</span><strong>${fmtNumber(strategy.multiple, 2)}x</strong></div>
       <div class="metric-row"><span>${t.metricLabels.irr}</span><strong>${strategy.irr == null ? "--" : fmtPct(strategy.irr * 100)}</strong></div>
       <div class="metric-row"><span>${t.metricLabels.maxDrawdown}</span><strong>${fmtPct(strategy.maxDrawdown * 100)}</strong></div>
-      <div class="metric-row"><span>${t.metricLabels.regression}</span><strong>${fmtPct(strategy.regression.annualized * 100)}</strong></div>
+      <div class="metric-row"><span>${t.metricLabels.regression}</span><strong>${hasRegression(strategy) ? fmtPct(strategy.regression.annualized * 100) : t.metricLabels.shortSample}</strong></div>
     `;
     return card;
   });
@@ -356,7 +362,7 @@ function chartBounds(strategies) {
   let max = 1;
   for (const strategy of strategies) {
     for (const point of strategy.points) max = Math.max(max, point.value);
-    if ($("trendInput").checked) {
+    if ($("trendInput").checked && hasRegression(strategy)) {
       for (const point of strategy.points) {
         const y = Math.exp(strategy.regression.intercept + strategy.regression.slope * point.year);
         max = Math.max(max, y);
@@ -429,7 +435,7 @@ function renderChart() {
     });
     ctx.stroke();
 
-    if ($("trendInput").checked) {
+    if ($("trendInput").checked && hasRegression(strategy)) {
       ctx.lineWidth = 1.4;
       ctx.setLineDash([6, 5]);
       ctx.beginPath();

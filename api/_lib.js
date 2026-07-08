@@ -268,6 +268,9 @@ function xirr(flows) {
 function regression(points) {
   const filtered = points.filter((point) => point.value > 0);
   const n = filtered.length;
+  if (n < 36 || filtered.at(-1).year < 3) {
+    return { intercept: null, slope: null, annualized: null, r2: null };
+  }
   const sx = filtered.reduce((sum, point) => sum + point.year, 0);
   const sy = filtered.reduce((sum, point) => sum + Math.log(point.value), 0);
   const sxx = filtered.reduce((sum, point) => sum + point.year * point.year, 0);
