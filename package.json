@@ -1,0 +1,14 @@
+{
+  "name": "qqq-tqqq-signal-dashboard",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Bilingual QQQ/TQQQ three-signal dashboard with live indicators and interactive DCA backtests.",
+  "scripts": {
+    "dev": "node dev-server.cjs",
+    "check": "node scripts/check.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
