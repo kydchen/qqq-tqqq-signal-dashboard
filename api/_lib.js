@@ -1,4 +1,4 @@
-const FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=";
+const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const CAPE_URL = "https://www.multpl.com/shiller-pe/table/by-month";
 const CACHE_MS = 15 * 60 * 1000;
 
@@ -12,13 +12,13 @@ function sendJson(res, status, payload) {
   res.end(body);
 }
 
-async function fetchText(url, timeoutMs = 12000) {
+async function fetchText(url, timeoutMs = 12000, headers = {}) {
   let lastError;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, { signal: controller.signal, headers });
       if (!res.ok) throw new Error(`${url} returned ${res.status}`);
       return await res.text();
     } catch (error) {
@@ -30,16 +30,23 @@ async function fetchText(url, timeoutMs = 12000) {
   throw lastError;
 }
 
-function parseFredCsv(text, series) {
-  const rows = text.trim().split(/\r?\n/).slice(1);
+async function fetchYahooSeries(symbol, name) {
+  const period1 = symbol === "^VIX" ? 631152000 : 497000000;
+  const period2 = Math.floor(Date.now() / 1000) + 86400;
+  const url = `${YAHOO_CHART}${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=history`;
+  const text = await fetchText(url, 12000, { "User-Agent": "Mozilla/5.0" });
+  const payload = JSON.parse(text);
+  const result = payload.chart?.result?.[0];
+  const timestamps = result?.timestamp || [];
+  const closes = result?.indicators?.quote?.[0]?.close || [];
   const out = [];
-  for (const line of rows) {
-    const [date, raw] = line.split(",");
-    if (!date || !raw || raw === ".") continue;
-    const value = Number(raw);
-    if (Number.isFinite(value)) out.push({ date, value });
+  for (let i = 0; i < timestamps.length; i += 1) {
+    const value = Number(closes[i]);
+    if (Number.isFinite(value) && value > 0) {
+      out.push({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), value });
+    }
   }
-  if (out.length < 60) throw new Error(`${series} returned too few observations`);
+  if (out.length < 60) throw new Error(`${name} returned too few observations`);
   return out;
 }
 
@@ -67,14 +74,14 @@ function parseCapeTable(text) {
 
 async function loadData() {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.data;
-  const [nasdaqText, vixText, capeText] = await Promise.all([
-    fetchText(`${FRED_CSV}NASDAQ100`),
-    fetchText(`${FRED_CSV}VIXCLS`),
+  const [nasdaq, vix, capeText] = await Promise.all([
+    fetchYahooSeries("^NDX", "Nasdaq-100"),
+    fetchYahooSeries("^VIX", "VIX"),
     fetchText(CAPE_URL),
   ]);
   const data = {
-    nasdaq: parseFredCsv(nasdaqText, "NASDAQ100"),
-    vix: parseFredCsv(vixText, "VIXCLS"),
+    nasdaq,
+    vix,
     capeLatestFirst: parseCapeTable(capeText),
   };
   cache = { at: Date.now(), data };
@@ -347,6 +354,6 @@ module.exports = {
   fetchText,
   marketSnapshot,
   parseCapeTable,
-  parseFredCsv,
+  fetchYahooSeries,
   sendJson,
 };

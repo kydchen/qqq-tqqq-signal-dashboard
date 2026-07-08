@@ -242,7 +242,7 @@ function renderMarket() {
   $("operation").textContent = text[1];
   $("risk").textContent = text[2];
   $("meta").textContent = t.meta(marketData);
-  $("sources").innerHTML = `${t.sources}<a href="https://fred.stlouisfed.org/series/NASDAQ100">FRED NASDAQ100</a>, <a href="https://fred.stlouisfed.org/series/VIXCLS">FRED VIXCLS</a>, <a href="https://www.multpl.com/shiller-pe/table/by-month">Multpl Shiller PE</a>.`;
+  $("sources").innerHTML = `${t.sources}<a href="https://finance.yahoo.com/quote/%5ENDX/">Yahoo ^NDX</a>, <a href="https://finance.yahoo.com/quote/%5EVIX/">Yahoo ^VIX</a>, <a href="https://www.multpl.com/shiller-pe/table/by-month">Multpl Shiller PE</a>.`;
 
   $("chips").replaceChildren(
     chip(t.chips.valuationCheap, decision.lowSignals.valuationCheap),

@@ -1,4 +1,4 @@
-const { fetchText, parseCapeTable, parseFredCsv, sendJson } = require("./_lib");
+const { fetchText, fetchYahooSeries, parseCapeTable, sendJson } = require("./_lib");
 
 async function check(name, run) {
   const started = Date.now();
@@ -12,12 +12,12 @@ async function check(name, run) {
 
 module.exports = async function handler(req, res) {
   const checks = await Promise.all([
-    check("FRED NASDAQ100", async () => {
-      const rows = parseFredCsv(await fetchText("https://fred.stlouisfed.org/graph/fredgraph.csv?id=NASDAQ100"), "NASDAQ100");
+    check("Yahoo ^NDX", async () => {
+      const rows = await fetchYahooSeries("^NDX", "Nasdaq-100");
       return { rows: rows.length, latest: rows.at(-1) };
     }),
-    check("FRED VIXCLS", async () => {
-      const rows = parseFredCsv(await fetchText("https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS"), "VIXCLS");
+    check("Yahoo ^VIX", async () => {
+      const rows = await fetchYahooSeries("^VIX", "VIX");
       return { rows: rows.length, latest: rows.at(-1) };
     }),
     check("Multpl CAPE", async () => {

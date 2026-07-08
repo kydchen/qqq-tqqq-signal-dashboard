@@ -38,8 +38,8 @@ Import the repository into Vercel. The static page is `index.html`; serverless A
 
 ## Data
 
-- Nasdaq-100: FRED `NASDAQ100`
-- VIX: FRED `VIXCLS`
+- Nasdaq-100: Yahoo Finance `^NDX`
+- VIX: Yahoo Finance `^VIX`
 - CAPE/Shiller PE: Multpl monthly table
 
 Backtests use Nasdaq-100 as a QQQ proxy and synthesize TQQQ from 3x daily Nasdaq-100 returns. The 80/20 variant allocates each new monthly contribution 80% to QQQ and 20% to TQQQ, without rebalancing existing holdings. They do not include ETF fees, dividends, tax, slippage, borrowing limits, or live broker execution constraints.
