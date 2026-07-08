@@ -83,7 +83,6 @@
           <p id="backtestKicker" class="eyebrow">收益回测</p>
           <h2 id="backtestTitle">比较不同定投方式</h2>
         </div>
-        <button id="refreshBtn" type="button">刷新数据</button>
       </div>
 
       <div class="backtest-controls">
@@ -97,27 +96,28 @@
             <option value="2010-01">2010</option>
             <option value="2015-01">2015</option>
             <option value="2020-01">2020</option>
+            <option value="2025-01">2025</option>
           </select>
         </label>
-        <label>
-          <span id="monthlyLabel">每月投入</span>
-          <input id="monthlyInput" type="number" min="100" step="100" value="1000" />
-        </label>
+        <div class="fixed-money">
+          <span id="monthlyFixedLabel">每月固定投入</span>
+          <strong>$1,000</strong>
+        </div>
         <label class="checkline">
           <input id="trendInput" type="checkbox" checked />
           <span id="trendLabel">显示 log 趋势拟合线</span>
         </label>
-        <button id="actionsToggleBtn" class="ghost" type="button">显示月度动作</button>
-        <button id="runBtn" type="button">运行回测</button>
+        <label class="checkline">
+          <input id="actionsInput" type="checkbox" />
+          <span id="actionMarkersLabel">浮窗显示月度动作</span>
+        </label>
       </div>
 
       <div id="strategyToggles" class="strategy-toggles"></div>
-      <div id="actionLegend" class="action-legend" hidden></div>
       <div class="chart-wrap">
         <canvas id="equityChart" width="1100" height="520"></canvas>
         <div id="tooltip" class="tooltip" hidden></div>
       </div>
-      <div id="actionStrip" class="action-strip" hidden></div>
       <div id="metrics" class="metrics-grid"></div>
       <p id="backtestNote" class="small-note"></p>
     </section>

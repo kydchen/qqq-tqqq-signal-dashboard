@@ -6,7 +6,7 @@ Bilingual QQQ/TQQQ dashboard for three monthly signals:
 - Nasdaq-100 drawdown and fast-crash check
 - VIX 5-day average
 
-It also includes an interactive DCA backtest comparing QQQ DCA, TQQQ DCA, 80% QQQ / 20% TQQQ DCA, and a three-signal QQQ/TQQQ timing rule.
+It also includes an interactive DCA backtest comparing QQQ DCA, TQQQ DCA, 80% QQQ / 20% TQQQ DCA, and a three-signal QQQ/TQQQ timing rule. Backtests use a fixed $1,000 monthly contribution.
 
 ## Signal Rule
 
