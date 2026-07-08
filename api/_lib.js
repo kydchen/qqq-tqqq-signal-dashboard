@@ -8,14 +8,26 @@ function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Cache-Control", "s-maxage=900, stale-while-revalidate=3600");
+  res.setHeader("Cache-Control", status < 400 ? "s-maxage=900, stale-while-revalidate=3600" : "no-store");
   res.end(body);
 }
 
-async function fetchText(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url} returned ${res.status}`);
-  return res.text();
+async function fetchText(url, timeoutMs = 12000) {
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`${url} returned ${res.status}`);
+      return await res.text();
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw lastError;
 }
 
 function parseFredCsv(text, series) {
@@ -332,6 +344,9 @@ async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
 module.exports = {
   backtest,
   calculateDecision,
+  fetchText,
   marketSnapshot,
+  parseCapeTable,
+  parseFredCsv,
   sendJson,
 };

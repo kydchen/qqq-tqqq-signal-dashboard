@@ -26,6 +26,12 @@ http://127.0.0.1:8765
 npm run check
 ```
 
+Deployment diagnostics:
+
+```text
+/api/health
+```
+
 ## Deploy
 
 Import the repository into Vercel. The static page is `index.html`; serverless API routes live in `api/`.

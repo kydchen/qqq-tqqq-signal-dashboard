@@ -430,15 +430,14 @@ async function loadAll() {
   $("error").hidden = true;
   $("refreshBtn").disabled = true;
   $("runBtn").disabled = true;
-  try {
-    await Promise.all([loadMarket(), loadBacktest()]);
-  } catch (err) {
+  const results = await Promise.allSettled([loadMarket(), loadBacktest()]);
+  const errors = results.filter((result) => result.status === "rejected").map((result) => result.reason.message);
+  if (errors.length) {
     $("error").hidden = false;
-    $("error").textContent = `${copy[lang].error}${err.message}`;
-  } finally {
-    $("refreshBtn").disabled = false;
-    $("runBtn").disabled = false;
+    $("error").textContent = `${copy[lang].error}${errors.join(" / ")}`;
   }
+  $("refreshBtn").disabled = false;
+  $("runBtn").disabled = false;
 }
 
 $("zhBtn").addEventListener("click", () => { lang = "zh"; renderStatic(); });

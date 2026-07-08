@@ -29,6 +29,7 @@ const server = http.createServer((req, res) => {
   req.query = parsed.query;
   if (parsed.pathname === "/api/market") return require("./api/market")(req, res);
   if (parsed.pathname === "/api/backtest") return require("./api/backtest")(req, res);
+  if (parsed.pathname === "/api/health") return require("./api/health")(req, res);
   const requested = parsed.pathname === "/" ? "/index.html" : parsed.pathname;
   const filePath = path.normalize(path.join(root, requested));
   if (!filePath.startsWith(root)) {
