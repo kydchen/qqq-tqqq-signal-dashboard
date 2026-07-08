@@ -14,8 +14,8 @@ The signal strategy uses the same monthly contribution as the benchmark strategi
 
 - 2-3 low signals: deploy cash into TQQQ, then spend the next 6 months moving toward a 90% TQQQ target.
 - 1 low signal: buy QQQ with up to 2x the monthly contribution.
-- Fast crash without low-signal convergence: sell about half of TQQQ into cash.
-- Sustained heat or quiet volatility: sell about 1/12 of TQQQ monthly while keeping a 20% TQQQ floor.
+- Fast crash without low-signal convergence: sell about half of TQQQ into cash and do not buy QQQ/TQQQ that month.
+- Sustained heat or quiet volatility: sell about 1/12 of TQQQ monthly, keep a 20% TQQQ floor, and keep new monthly cash in cash.
 - Normal regime: refill the 20% TQQQ floor first, then buy QQQ; drip surplus cash back at roughly 1/6 per month.
 
 ## Local Dev

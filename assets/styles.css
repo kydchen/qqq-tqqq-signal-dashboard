@@ -273,26 +273,30 @@ h2 {
 
 .action-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .action-card {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 13px;
+  padding: 12px;
   background: #fbfcfe;
+}
+
+.action-card:last-child {
+  grid-column: 1 / -1;
 }
 
 .action-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--cash);
   color: #fff;
@@ -302,15 +306,15 @@ h2 {
 }
 
 .action-card h3 {
-  margin: 0 0 4px;
-  font-size: 16px;
+  margin: 0 0 2px;
+  font-size: 15px;
 }
 
 .action-card p {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.35;
 }
 
 .action-card .condition {
@@ -338,7 +342,7 @@ h2 {
 
 .backtest-controls {
   display: grid;
-  grid-template-columns: 150px 170px minmax(190px, 1fr) minmax(190px, 1fr);
+  grid-template-columns: 150px 190px minmax(190px, 1fr) minmax(190px, 1fr);
   gap: 12px;
   align-items: end;
   margin: 0;
@@ -348,23 +352,28 @@ h2 {
 }
 
 .fixed-money {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   min-height: 40px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
-  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #eaf1ff;
+  padding: 9px 12px;
 }
 
 .fixed-money span {
   display: block;
-  margin: 0 0 2px;
-  color: var(--muted);
+  margin: 0;
+  color: #35507a;
   font-size: 12px;
   font-weight: 720;
 }
 
 .fixed-money strong {
-  font-size: 15px;
+  color: var(--blue);
+  font-size: 18px;
   font-variant-numeric: tabular-nums;
 }
 
