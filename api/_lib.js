@@ -199,10 +199,40 @@ function buyTQQQ(portfolio, amount, price) {
   portfolio.tqqq += spend / price;
 }
 
+function sellQQQ(portfolio, amount, price) {
+  const value = Math.max(0, Math.min(portfolio.qqq * price, amount));
+  portfolio.qqq -= value / price;
+  portfolio.cash += value;
+}
+
 function sellTQQQ(portfolio, fraction, price) {
   const shares = portfolio.tqqq * fraction;
   portfolio.tqqq -= shares;
   portfolio.cash += shares * price;
+}
+
+function sellTQQQWithFloor(portfolio, fraction, prices, floorPct) {
+  const totalValue = valueOf(portfolio, prices);
+  const tqqqValue = portfolio.tqqq * prices.tqqq;
+  const floorValue = totalValue * floorPct;
+  const sellValue = Math.max(0, Math.min(tqqqValue * fraction, tqqqValue - floorValue));
+  if (sellValue <= 0) return;
+  portfolio.tqqq -= sellValue / prices.tqqq;
+  portfolio.cash += sellValue;
+}
+
+function buyTQQQToTarget(portfolio, targetPct, prices, rotationPct = 0) {
+  const totalValue = valueOf(portfolio, prices);
+  const targetValue = totalValue * targetPct;
+  let need = Math.max(0, targetValue - portfolio.tqqq * prices.tqqq);
+  if (need <= 0) return;
+  const cashSpend = Math.min(portfolio.cash, need);
+  buyTQQQ(portfolio, cashSpend, prices.tqqq);
+  need -= cashSpend;
+  if (need <= 0 || rotationPct <= 0) return;
+  const rotateValue = Math.min(portfolio.qqq * prices.qqq * rotationPct, need);
+  sellQQQ(portfolio, rotateValue, prices.qqq);
+  buyTQQQ(portfolio, rotateValue, prices.tqqq);
 }
 
 function record(portfolio, prices, startTime, actionKey = null) {
@@ -285,6 +315,8 @@ async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
   };
   let lastMonth = "";
   let startTime = null;
+  let signalRampMonths = 0;
+  let heatMonths = 0;
   const capeCursor = { index: 0 };
 
   for (let i = 30; i < prices.length; i += 1) {
@@ -308,21 +340,36 @@ async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
     buyQQQ(portfolios.blend8020, portfolios.blend8020.cash * 0.8, price.qqq);
     buyTQQQ(portfolios.blend8020, portfolios.blend8020.cash, price.tqqq);
 
+    let signalAction = decision.key;
+    const isHeat = decision.defensiveFlags.bubbleWatch || decision.defensiveFlags.quietVix;
+    heatMonths = isHeat ? heatMonths + 1 : 0;
     if (decision.key === "bottomAttack") {
       buyTQQQ(portfolios.signal, portfolios.signal.cash, price.tqqq);
-    } else if (decision.key === "smallDipBuy") {
-      buyQQQ(portfolios.signal, portfolios.signal.cash * 0.5, price.qqq);
+      signalRampMonths = 6;
+      heatMonths = 0;
     } else if (decision.key === "crashDefense") {
       sellTQQQ(portfolios.signal, 0.5, price.tqqq);
-    } else if (decision.key === "trimHeat") {
-      sellTQQQ(portfolios.signal, 1 / 12, price.tqqq);
+      signalRampMonths = 0;
+    } else if (signalRampMonths > 0) {
+      buyTQQQToTarget(portfolios.signal, 0.9, price, 1 / signalRampMonths);
+      signalRampMonths -= 1;
+      signalAction = "rampTqqq";
+    } else if (decision.key === "smallDipBuy") {
+      buyQQQ(portfolios.signal, Math.min(portfolios.signal.cash, monthlyAmount * 2), price.qqq);
+      heatMonths = 0;
+    } else if (isHeat && heatMonths >= 6) {
+      sellTQQQWithFloor(portfolios.signal, 1 / 12, price, 0.2);
+      signalAction = "trimHeat";
+    } else if (decision.key === "pauseAtHigh" || isHeat) {
+      signalAction = "pauseAtHigh";
     } else if (decision.key === "normalDca") {
+      buyTQQQToTarget(portfolios.signal, 0.2, price);
       const drip = Math.min(portfolios.signal.cash, monthlyAmount + Math.max(0, portfolios.signal.cash - monthlyAmount) / 6);
       buyQQQ(portfolios.signal, drip, price.qqq);
     }
 
     for (const [key, portfolio] of Object.entries(portfolios)) {
-      record(portfolio, price, startTime, key === "signal" ? decision.key : null);
+      record(portfolio, price, startTime, key === "signal" ? signalAction : null);
     }
   }
 

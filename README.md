@@ -8,6 +8,16 @@ Bilingual QQQ/TQQQ dashboard for three monthly signals:
 
 It also includes an interactive DCA backtest comparing QQQ DCA, TQQQ DCA, 80% QQQ / 20% TQQQ DCA, and a three-signal QQQ/TQQQ timing rule.
 
+## Signal Rule
+
+The signal strategy uses the same monthly contribution as the benchmark strategies, but changes cash deployment and TQQQ exposure:
+
+- 2-3 low signals: deploy cash into TQQQ, then spend the next 6 months moving toward a 90% TQQQ target.
+- 1 low signal: buy QQQ with up to 2x the monthly contribution.
+- Fast crash without low-signal convergence: sell about half of TQQQ into cash.
+- Sustained heat or quiet volatility: sell about 1/12 of TQQQ monthly while keeping a 20% TQQQ floor.
+- Normal regime: refill the 20% TQQQ floor first, then buy QQQ; drip surplus cash back at roughly 1/6 per month.
+
 ## Local Dev
 
 ```bash

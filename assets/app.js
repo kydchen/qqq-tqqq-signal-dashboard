@@ -7,9 +7,10 @@ const colors = {
   signal: "#6d28d9",
 };
 
-const actionOrder = ["bottomAttack", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"];
+const actionOrder = ["bottomAttack", "rampTqqq", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"];
 const actionVisuals = {
   bottomAttack: { icon: "T", color: "#b42318" },
+  rampTqqq: { icon: "T+", color: "#dc2626" },
   smallDipBuy: { icon: "Q", color: "#0f766e" },
   crashDefense: { icon: "1/2", color: "#7f1d1d" },
   trimHeat: { icon: "-T", color: "#b45309" },
@@ -34,7 +35,7 @@ const copy = {
     methodTitle: "三类信号，按月决策",
     actionCatalogKicker: "动作清单",
     actionCatalogTitle: "三信号策略会做什么",
-    actionCatalogNote: "按优先级从上到下判断，先命中的动作会执行。只有三信号策略会卖出；QQQ、TQQQ、80/20 三个基准策略只按月买入，不卖出。",
+    actionCatalogNote: "三信号策略按低位、快崩、高位、常态四类规则处理。只有三信号策略会卖出和留现金；QQQ、TQQQ、80/20 三个基准策略只按月买入，不卖出。",
     backtestKicker: "收益回测",
     backtestTitle: "比较不同定投方式",
     startLabel: "起始时间",
@@ -42,7 +43,7 @@ const copy = {
     trendLabel: "显示 log 趋势拟合线",
     actionMarkersLabel: "显示月度动作",
     hideActionMarkersLabel: "隐藏月度动作",
-    backtestNote: "回测使用 Nasdaq-100 指数代理 QQQ；TQQQ 用 3x 日收益再平衡合成，未扣除基金费、税费、滑点和股息。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。信号策略使用相同月投入，只改变买入、卖出和现金仓节奏。",
+    backtestNote: "回测使用 Nasdaq-100 指数代理 QQQ；TQQQ 用 3x 日收益再平衡合成，未扣除基金费、税费、滑点和股息。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。三信号策略包含现金仓、小底 QQQ 加仓、大底后 6 个月向 90% TQQQ 推进、高位 TQQQ 锁利卖出，并保留 20% TQQQ 地板仓。",
     sources: "数据源：",
     error: "数据加载失败：",
     methods: [
@@ -60,20 +61,21 @@ const copy = {
       }
     ],
     decisions: {
-      bottomAttack: ["大底进攻", "现金仓全部买入 TQQQ；新增资金也买 TQQQ。", "这是低估、深跌、恐慌共振时才触发的进攻动作。"],
-      smallDipBuy: ["小底加仓", "拿当前现金仓的一半买 QQQ，另一半继续等待更强信号。", "这是折扣区，不是梭哈区。"],
+      bottomAttack: ["大底进攻", "现金仓全部买入 TQQQ；随后 6 个月逐步把组合推向 90% TQQQ。", "这是低估、深跌、恐慌共振时才触发的进攻动作。"],
+      smallDipBuy: ["小底加仓", "最多用 2 倍月投入买 QQQ；多余现金继续等待更强信号。", "这是折扣区，不是梭哈区。"],
       crashDefense: ["快崩风控", "卖出约一半 TQQQ，转入现金仓，等低位信号共振再打回。", "快崩阶段先活下来，再考虑抄底。"],
       pauseAtHigh: ["高位暂停", "本月暂停新增 QQQ/TQQQ 买入，新增资金进入现金仓。", "高估且贴近新高时，策略赚的是耐心，不是追涨。"],
-      trimHeat: ["过热锁利", "卖出约 1/12 TQQQ，新增资金也进入现金仓。", "这是降低路径风险，不是看空全部美股。"],
-      normalDca: ["正常定投", "按 1x 买 QQQ；如果有现金仓，可按每月 1/6 的节奏慢慢买回 QQQ。", "没有低位信号时，不主动放大杠杆。"],
+      trimHeat: ["过热锁利", "卖出约 1/12 TQQQ，但保留 20% TQQQ 底仓；新增资金进入现金仓。", "这是降低路径风险，不是看空全部美股。"],
+      normalDca: ["正常定投", "先把 TQQQ 补到约 20% 地板仓，剩余资金买 QQQ；现金仓按每月 1/6 慢慢滴灌回 QQQ。", "没有低位信号时，只保留小杠杆底仓，不主动追高。"],
     },
     actions: {
       bottomAttack: { title: "大底进攻", condition: "2-3 个低位信号同时亮", operation: "现金仓 + 当月新增资金全部买 TQQQ" },
-      smallDipBuy: { title: "小底加仓", condition: "只有 1 个低位信号亮", operation: "当前现金仓的一半买 QQQ，另一半保留" },
+      rampTqqq: { title: "大底后加速", condition: "大底进攻后的 6 个月", operation: "用新增资金并逐步从 QQQ 切到 TQQQ，目标约 90%" },
+      smallDipBuy: { title: "小底加仓", condition: "只有 1 个低位信号亮", operation: "最多 2x 月投入买 QQQ" },
       crashDefense: { title: "快崩风控", condition: "25 日跌幅 <= -12%，且没有低位共振", operation: "卖出约 1/2 TQQQ，转现金" },
-      trimHeat: { title: "过热锁利", condition: "CAPE >= 85% 或 VIX <= 12", operation: "卖出约 1/12 TQQQ，新增资金留现金" },
+      trimHeat: { title: "过热锁利", condition: "过热/过静持续 6 个月以上", operation: "每月卖出约 1/12 TQQQ，但保留 20% 地板仓" },
       pauseAtHigh: { title: "高位暂停", condition: "CAPE >= 70% 且指数距高点 < 5%", operation: "不买 QQQ/TQQQ，当月资金留现金" },
-      normalDca: { title: "正常定投", condition: "没有触发以上任何动作", operation: "买 QQQ；现金仓按 1/6 节奏滴灌回 QQQ" },
+      normalDca: { title: "正常定投", condition: "没有触发以上任何动作", operation: "先补 20% TQQQ 底仓，再买 QQQ；现金仓按 1/6 滴灌" },
     },
     chips: {
       valuationCheap: "估值便宜",
@@ -118,7 +120,7 @@ const copy = {
     methodTitle: "Three monthly signals",
     actionCatalogKicker: "Action list",
     actionCatalogTitle: "What the signal strategy can do",
-    actionCatalogNote: "Rules are evaluated from top to bottom; the first match executes. Only the three-signal strategy sells. QQQ, TQQQ, and 80/20 benchmarks only buy monthly and never sell.",
+    actionCatalogNote: "The signal strategy handles low-signal, fast-crash, high-heat, and normal regimes. Only the signal strategy sells and holds cash. QQQ, TQQQ, and 80/20 benchmarks only buy monthly and never sell.",
     backtestKicker: "Return backtest",
     backtestTitle: "Compare DCA variants",
     startLabel: "Start date",
@@ -126,7 +128,7 @@ const copy = {
     trendLabel: "Show log trend fit",
     actionMarkersLabel: "Show monthly actions",
     hideActionMarkersLabel: "Hide monthly actions",
-    backtestNote: "Backtest uses Nasdaq-100 as a QQQ proxy. TQQQ is synthesized from 3x daily Nasdaq-100 returns before fees, taxes, slippage, and dividends. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings. The signal strategy uses the same monthly contribution and changes only buy, sell, and cash timing.",
+    backtestNote: "Backtest uses Nasdaq-100 as a QQQ proxy. TQQQ is synthesized from 3x daily Nasdaq-100 returns before fees, taxes, slippage, and dividends. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings. The signal strategy includes cash, small-dip QQQ buying, a 6-month post-bottom ramp toward 90% TQQQ, high-heat TQQQ trimming, and a 20% TQQQ floor.",
     sources: "Sources: ",
     error: "Data load failed: ",
     methods: [
@@ -144,20 +146,21 @@ const copy = {
       }
     ],
     decisions: {
-      bottomAttack: ["Bottom attack", "Deploy all cash into TQQQ; put new money into TQQQ too.", "This only fires when cheap valuation, deep drawdown, and panic start to converge."],
-      smallDipBuy: ["Small dip buy", "Use half of current cash to buy QQQ and keep the other half for stronger signals.", "This is a discount zone, not an all-in signal."],
+      bottomAttack: ["Bottom attack", "Deploy all cash into TQQQ, then spend 6 months moving the portfolio toward 90% TQQQ.", "This only fires when cheap valuation, deep drawdown, and panic start to converge."],
+      smallDipBuy: ["Small dip buy", "Buy QQQ with up to 2x the monthly contribution; keep excess cash for stronger signals.", "This is a discount zone, not an all-in signal."],
       crashDefense: ["Fast-crash defense", "Sell about half of TQQQ into cash, then wait for low signals to converge before redeploying.", "Survive the fast crash before trying to catch the bottom."],
       pauseAtHigh: ["Pause at high", "Pause new QQQ/TQQQ buying this month. Route new money to cash.", "When valuation is high near the index high, patience is the edge."],
-      trimHeat: ["Trim heat", "Sell about 1/12 of TQQQ and route new money to cash.", "This lowers path risk; it is not an all-equity bearish call."],
-      normalDca: ["Normal DCA", "Buy QQQ at 1x pace. If cash exists, drip about 1/6 of it back into QQQ each month.", "Without low signals, do not add leverage."],
+      trimHeat: ["Trim heat", "Sell about 1/12 of TQQQ, keep a 20% TQQQ floor, and route new money to cash.", "This lowers path risk; it is not an all-equity bearish call."],
+      normalDca: ["Normal DCA", "First refill the TQQQ floor to about 20%, then buy QQQ. If cash exists, drip about 1/6 of it back into QQQ each month.", "Without low signals, keep only a small leverage floor instead of chasing."],
     },
     actions: {
       bottomAttack: { title: "Bottom attack", condition: "2-3 low signals are on", operation: "Deploy cash + monthly contribution into TQQQ" },
-      smallDipBuy: { title: "Small dip buy", condition: "Exactly 1 low signal is on", operation: "Use half of current cash to buy QQQ" },
+      rampTqqq: { title: "Post-bottom ramp", condition: "6 months after a bottom attack", operation: "Use new money and rotate from QQQ toward a 90% TQQQ target" },
+      smallDipBuy: { title: "Small dip buy", condition: "Exactly 1 low signal is on", operation: "Buy QQQ with up to 2x monthly contribution" },
       crashDefense: { title: "Fast-crash defense", condition: "25-day drop <= -12%, without low-signal convergence", operation: "Sell about 1/2 of TQQQ into cash" },
-      trimHeat: { title: "Trim heat", condition: "CAPE >= 85% or VIX <= 12", operation: "Sell about 1/12 of TQQQ; keep new money in cash" },
+      trimHeat: { title: "Trim heat", condition: "Heat/quiet regime lasts 6+ months", operation: "Sell about 1/12 of TQQQ monthly, but keep a 20% floor" },
       pauseAtHigh: { title: "Pause at high", condition: "CAPE >= 70% and index is within 5% of its high", operation: "Do not buy QQQ/TQQQ; hold monthly cash" },
-      normalDca: { title: "Normal DCA", condition: "No higher-priority rule fires", operation: "Buy QQQ; drip 1/6 of cash back into QQQ" },
+      normalDca: { title: "Normal DCA", condition: "No higher-priority rule fires", operation: "Refill the 20% TQQQ floor, then buy QQQ; drip cash at 1/6" },
     },
     chips: {
       valuationCheap: "Cheap valuation",
@@ -191,7 +194,7 @@ const copy = {
 let lang = "zh";
 let marketData = null;
 let backtestData = null;
-let selected = new Set(["qqq", "tqqq", "signal"]);
+let selected = new Set(["qqq", "blend8020", "signal"]);
 let showActionMarkers = false;
 
 function fmtPct(n, digits = 1) {
@@ -415,7 +418,7 @@ function renderChart() {
   ctx.scale(dpr, dpr);
   const width = canvas.width / dpr;
   const height = canvas.height / dpr;
-  const pad = { left: 70, right: 24, top: 24, bottom: 42 };
+  const pad = { left: 96, right: 24, top: 24, bottom: 42 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   ctx.clearRect(0, 0, width, height);
