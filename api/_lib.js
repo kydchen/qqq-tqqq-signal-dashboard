@@ -96,6 +96,10 @@ function percentile(values, value) {
   return 100 * values.filter((item) => item <= value).length / values.length;
 }
 
+function recentSeries(points, count) {
+  return points.slice(-count).map((point) => ({ date: point.date, value: point.value }));
+}
+
 function calculateDecision(state) {
   const lowSignals = {
     valuationCheap: state.capePercentile < 20,
@@ -144,6 +148,11 @@ async function marketSnapshot() {
         historyCount: capeValues.length,
         min: Math.min(...capeValues),
         max: Math.max(...capeValues),
+        recent: capeLatestFirst.slice(0, 12).reverse().map((point) => ({
+          date: point.date,
+          label: point.label,
+          value: point.value,
+        })),
       },
       nasdaq100: {
         date: nasdaq.at(-1).date,
@@ -151,11 +160,13 @@ async function marketSnapshot() {
         ath,
         drawdownPct,
         crash25dPct,
+        recent: recentSeries(nasdaq, 5),
       },
       vix: {
         date: vix.at(-1).date,
         value5dAvg: currentVix,
         latest: vix.at(-1).value,
+        recent: recentSeries(vix, 5),
       },
     },
     decision,

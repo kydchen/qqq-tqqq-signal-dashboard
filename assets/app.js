@@ -31,6 +31,21 @@ const copy = {
     capeLabel: "CAPE 分位",
     ddLabel: "纳指 100 回撤",
     vixLabel: "VIX 5 日均值",
+    historyLabels: {
+      cape: "近 12 个月（月频）",
+      nasdaq100: "近 5 个交易日",
+      vix: "近 5 个交易日",
+    },
+    statusLabels: {
+      cheap: "便宜",
+      expensive: "高估",
+      neutral: "中性",
+      deep: "深跌",
+      fastCrash: "快崩",
+      normal: "常态",
+      panic: "恐慌",
+      lowVol: "低波动",
+    },
     methodKicker: "计算方法",
     methodTitle: "三类信号，按月决策",
     actionCatalogKicker: "动作清单",
@@ -48,7 +63,7 @@ const copy = {
     methods: [
       {
         title: "估值：CAPE 历史分位",
-        body: "取最新 Shiller PE/CAPE，与 1871 年以来的月度历史值比较。低于 20% 代表便宜，高于 70% 代表高估，高于 85% 进入泡沫警戒。估值变化慢，适合决定是否放大或收缩杠杆。"
+        body: "取最新 Shiller PE/CAPE，与 1871 年以来的月度历史值比较。低于 20% 代表便宜，高于 70% 代表高估，高于 85% 进入泡沫警戒。它是月频慢变量，故意用长历史判断贵/便宜，不和 5 日走势做同类比较。"
       },
       {
         title: "趋势：回撤与快崩",
@@ -114,6 +129,21 @@ const copy = {
     capeLabel: "CAPE percentile",
     ddLabel: "Nasdaq-100 drawdown",
     vixLabel: "VIX 5-day average",
+    historyLabels: {
+      cape: "Last 12 months, monthly",
+      nasdaq100: "Last 5 trading days",
+      vix: "Last 5 trading days",
+    },
+    statusLabels: {
+      cheap: "Cheap",
+      expensive: "Expensive",
+      neutral: "Neutral",
+      deep: "Deep drop",
+      fastCrash: "Fast crash",
+      normal: "Normal",
+      panic: "Panic",
+      lowVol: "Low vol",
+    },
     methodKicker: "Method",
     methodTitle: "Three monthly signals",
     actionCatalogKicker: "Action list",
@@ -131,7 +161,7 @@ const copy = {
     methods: [
       {
         title: "Valuation: CAPE percentile",
-        body: "Compare the latest Shiller PE/CAPE with monthly history back to 1871. Below 20% is cheap, above 70% is expensive, and above 85% is bubble-watch territory. Valuation moves slowly, so it sizes leverage rather than timing every tick."
+        body: "Compare the latest Shiller PE/CAPE with monthly history back to 1871. Below 20% is cheap, above 70% is expensive, and above 85% is bubble-watch territory. It is a slow monthly variable, intentionally using long history for cheap/expensive context instead of acting like a 5-day timing signal."
       },
       {
         title: "Trend: drawdown and fast crash",
@@ -211,9 +241,41 @@ function hasRegression(strategy) {
   return Number.isFinite(strategy.regression?.annualized);
 }
 
-function setDot(id, cls) {
+function setStatus(dotId, labelId, cls, label) {
+  $(dotId).className = `dot ${cls}`;
+  $(labelId).textContent = label;
+}
+
+function renderSparkline(id, points, formatValue) {
   const el = $(id);
-  el.className = `dot ${cls}`;
+  if (!Array.isArray(points) || points.length === 0) {
+    el.textContent = "--";
+    return;
+  }
+  const values = points.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const width = 180;
+  const height = 42;
+  const coords = points.map((point, index) => {
+    const x = points.length === 1 ? width : (index / (points.length - 1)) * width;
+    const y = height - ((point.value - min) / range) * height;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const first = points[0];
+  const last = points.at(-1);
+  const firstLabel = first.label || first.date;
+  const lastLabel = last.label || last.date;
+  el.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" aria-hidden="true">
+      <polyline points="${coords}"></polyline>
+    </svg>
+    <div class="spark-meta">
+      <span>${firstLabel}: ${formatValue(first.value)}</span>
+      <span>${lastLabel}: ${formatValue(last.value)}</span>
+    </div>
+  `;
 }
 
 function renderStatic() {
@@ -226,6 +288,9 @@ function renderStatic() {
   $("capeLabel").textContent = t.capeLabel;
   $("ddLabel").textContent = t.ddLabel;
   $("vixLabel").textContent = t.vixLabel;
+  $("capeHistoryLabel").textContent = t.historyLabels.cape;
+  $("ddHistoryLabel").textContent = t.historyLabels.nasdaq100;
+  $("vixHistoryLabel").textContent = t.historyLabels.vix;
   $("methodKicker").textContent = t.methodKicker;
   $("methodTitle").textContent = t.methodTitle;
   $("actionCatalogKicker").textContent = t.actionCatalogKicker;
@@ -291,15 +356,33 @@ function renderMarket() {
   const { cape, nasdaq100, vix } = marketData.indicators;
   $("capeValue").textContent = fmtPct(cape.percentile);
   $("capeNote").textContent = t.capeNote(cape);
-  setDot("capeDot", cape.percentile < 20 ? "green" : cape.percentile >= 70 ? "red" : "amber");
+  const capeState = cape.percentile < 20
+    ? ["green", t.statusLabels.cheap]
+    : cape.percentile >= 70
+      ? ["red", t.statusLabels.expensive]
+      : ["amber", t.statusLabels.neutral];
+  setStatus("capeDot", "capeStatus", capeState[0], capeState[1]);
+  renderSparkline("capeSparkline", cape.recent, (value) => value.toFixed(2));
 
   $("ddValue").textContent = fmtPct(nasdaq100.drawdownPct);
   $("ddNote").textContent = t.ddNote(nasdaq100);
-  setDot("ddDot", nasdaq100.drawdownPct <= -20 ? "green" : nasdaq100.crash25dPct <= -12 ? "red" : "amber");
+  const ddState = nasdaq100.drawdownPct <= -20
+    ? ["green", t.statusLabels.deep]
+    : nasdaq100.crash25dPct <= -12
+      ? ["red", t.statusLabels.fastCrash]
+      : ["amber", t.statusLabels.normal];
+  setStatus("ddDot", "ddStatus", ddState[0], ddState[1]);
+  renderSparkline("ddSparkline", nasdaq100.recent, (value) => fmtNumber(value, 0));
 
   $("vixValue").textContent = fmtNumber(vix.value5dAvg, 1);
   $("vixNote").textContent = t.vixNote(vix);
-  setDot("vixDot", vix.value5dAvg >= 40 ? "green" : vix.value5dAvg <= 12 ? "red" : "amber");
+  const vixState = vix.value5dAvg >= 40
+    ? ["green", t.statusLabels.panic]
+    : vix.value5dAvg <= 12
+      ? ["red", t.statusLabels.lowVol]
+      : ["amber", t.statusLabels.normal];
+  setStatus("vixDot", "vixStatus", vixState[0], vixState[1]);
+  renderSparkline("vixSparkline", vix.recent, (value) => fmtNumber(value, 1));
 
   const decision = marketData.decision;
   const text = t.decisions[decision.key];

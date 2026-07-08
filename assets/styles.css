@@ -182,6 +182,22 @@ h2 {
 .dot.amber { background: var(--amber); }
 .dot.red { background: var(--red); }
 
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 68px;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  text-transform: none;
+}
+
 .metric {
   display: block;
   margin: 16px 0 8px;
@@ -196,6 +212,52 @@ h2 {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.52;
+}
+
+.tile-detail {
+  margin-top: 13px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+}
+
+.tile-detail summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.sparkline {
+  margin-top: 10px;
+}
+
+.sparkline svg {
+  display: block;
+  width: 100%;
+  height: 46px;
+  overflow: visible;
+}
+
+.sparkline polyline {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.spark-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.spark-meta span:last-child {
+  text-align: right;
 }
 
 .decision-panel {

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="QQQ/TQQQ three-signal dashboard with live indicators and interactive DCA backtests." />
   <title>QQQ/TQQQ Signal Dashboard</title>
+  <link rel="icon" href="data:," />
   <link rel="stylesheet" href="/assets/styles.css" />
 </head>
 <body>
@@ -25,26 +26,38 @@
       <article class="tile">
         <div class="tile-head">
           <span id="capeLabel">CAPE 分位</span>
-          <span id="capeDot" class="dot"></span>
+          <span class="status-pill"><span id="capeDot" class="dot"></span><span id="capeStatus">--</span></span>
         </div>
         <strong id="capeValue" class="metric">--</strong>
         <p id="capeNote" class="muted">--</p>
+        <details class="tile-detail">
+          <summary id="capeHistoryLabel">近 12 个月（月频）</summary>
+          <div id="capeSparkline" class="sparkline"></div>
+        </details>
       </article>
       <article class="tile">
         <div class="tile-head">
           <span id="ddLabel">纳指 100 回撤</span>
-          <span id="ddDot" class="dot"></span>
+          <span class="status-pill"><span id="ddDot" class="dot"></span><span id="ddStatus">--</span></span>
         </div>
         <strong id="ddValue" class="metric">--</strong>
         <p id="ddNote" class="muted">--</p>
+        <details class="tile-detail">
+          <summary id="ddHistoryLabel">近 5 个交易日</summary>
+          <div id="ddSparkline" class="sparkline"></div>
+        </details>
       </article>
       <article class="tile">
         <div class="tile-head">
           <span id="vixLabel">VIX 5 日均值</span>
-          <span id="vixDot" class="dot"></span>
+          <span class="status-pill"><span id="vixDot" class="dot"></span><span id="vixStatus">--</span></span>
         </div>
         <strong id="vixValue" class="metric">--</strong>
         <p id="vixNote" class="muted">--</p>
+        <details class="tile-detail">
+          <summary id="vixHistoryLabel">近 5 个交易日</summary>
+          <div id="vixSparkline" class="sparkline"></div>
+        </details>
       </article>
     </section>
 
