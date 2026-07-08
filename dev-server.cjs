@@ -14,8 +14,8 @@ const mime = {
 function serveFile(res, filePath) {
   fs.readFile(filePath, (err, body) => {
     if (err) {
-      res.statusCode = 404;
-      res.end("Not found");
+      res.statusCode = err.code === "ENOENT" ? 404 : 500;
+      res.end(err.code === "ENOENT" ? "Not found" : "Server error");
       return;
     }
     res.statusCode = 200;
@@ -31,8 +31,21 @@ const server = http.createServer((req, res) => {
   if (parsed.pathname === "/api/backtest") return require("./api/backtest")(req, res);
   if (parsed.pathname === "/api/health") return require("./api/health")(req, res);
   const requested = parsed.pathname === "/" ? "/index.html" : parsed.pathname;
-  const filePath = path.normalize(path.join(root, requested));
-  if (!filePath.startsWith(root)) {
+  let pathname;
+  try {
+    pathname = decodeURIComponent(requested);
+  } catch {
+    res.statusCode = 400;
+    res.end("Bad request");
+    return;
+  }
+  if (pathname.startsWith("/.git/")) {
+    res.statusCode = 403;
+    res.end("Forbidden");
+    return;
+  }
+  const filePath = path.normalize(path.join(root, pathname));
+  if (filePath !== root && !filePath.startsWith(root + path.sep)) {
     res.statusCode = 403;
     res.end("Forbidden");
     return;

@@ -5,7 +5,9 @@
   "description": "Bilingual QQQ/TQQQ three-signal dashboard with live indicators and interactive DCA backtests.",
   "scripts": {
     "dev": "node dev-server.cjs",
-    "check": "node scripts/check.cjs"
+    "check": "node scripts/check.cjs",
+    "check:live": "LIVE=1 node scripts/check.cjs",
+    "update-data": "node scripts/update-data.cjs"
   },
   "engines": {
     "node": ">=20"

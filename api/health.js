@@ -1,4 +1,4 @@
-const { fetchText, fetchYahooSeries, parseCapeTable, sendJson } = require("./_lib");
+const { loadData, sendJson } = require("./_lib");
 
 async function check(name, run) {
   const started = Date.now();
@@ -11,23 +11,19 @@ async function check(name, run) {
 }
 
 module.exports = async function handler(req, res) {
-  const checks = await Promise.all([
-    check("Yahoo ^NDX", async () => {
-      const rows = await fetchYahooSeries("^NDX", "Nasdaq-100");
-      return { rows: rows.length, latest: rows.at(-1) };
-    }),
-    check("Yahoo ^VIX", async () => {
-      const rows = await fetchYahooSeries("^VIX", "VIX");
-      return { rows: rows.length, latest: rows.at(-1) };
-    }),
-    check("Multpl CAPE", async () => {
-      const rows = parseCapeTable(await fetchText("https://www.multpl.com/shiller-pe/table/by-month"));
-      return { rows: rows.length, latest: rows[0] };
-    }),
-  ]);
-  sendJson(res, checks.every((item) => item.ok) ? 200 : 207, {
-    ok: checks.every((item) => item.ok),
+  const checks = [await check("Shared market data", async () => {
+    const data = await loadData();
+    return {
+      staleSources: data.staleSources,
+      nasdaqLatest: data.nasdaq.at(-1),
+      vixLatest: data.vix.at(-1),
+      capeLatest: data.capeLatestFirst[0],
+    };
+  })];
+  const ok = checks.every((item) => item.ok);
+  sendJson(res, ok ? 200 : 503, {
+    ok,
     generatedAt: new Date().toISOString(),
     checks,
-  });
+  }, { cache: false });
 };

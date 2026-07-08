@@ -16,6 +16,8 @@
 
 * { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -44,7 +46,7 @@ button {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 3px solid rgba(29, 78, 216, .22);
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
 
@@ -181,6 +183,7 @@ h2 {
 .dot.green { background: var(--green); }
 .dot.amber { background: var(--amber); }
 .dot.red { background: var(--red); }
+.dot.blue { background: var(--blue); }
 
 .status-pill {
   display: inline-flex;
@@ -263,6 +266,7 @@ h2 {
   display: grid;
   grid-template-columns: minmax(210px, .42fr) minmax(0, 1fr);
   gap: 20px;
+  margin-top: 20px;
   padding: 20px;
   border-left: 6px solid var(--decision-color, var(--blue));
 }
@@ -403,7 +407,7 @@ h2 {
 
 .backtest-controls {
   display: grid;
-  grid-template-columns: 150px 190px minmax(190px, 1fr) minmax(190px, 1fr);
+  grid-template-columns: 150px 180px repeat(3, minmax(150px, 1fr));
   gap: 12px;
   align-items: end;
   margin: 0;
@@ -536,6 +540,31 @@ canvas {
   line-height: 1.45;
 }
 
+.chart-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(251, 252, 254, .84);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 720;
+  text-align: center;
+}
+
+.chart-readout {
+  margin: 8px 20px 0;
+  min-height: 20px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.chart-readout:empty {
+  display: none;
+}
+
 .tooltip-action {
   display: grid;
   grid-template-columns: 9px minmax(0, 1fr);
@@ -564,11 +593,65 @@ canvas {
   margin: 14px 20px;
 }
 
+.sensitivity {
+  display: grid;
+  grid-template-columns: minmax(220px, .7fr) minmax(0, 1fr);
+  gap: 14px;
+  margin: 0 20px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 13px;
+  background: #f8fafc;
+}
+
+.sensitivity:empty {
+  display: none;
+}
+
+.sensitivity h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.sensitivity p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.sensitivity strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.sensitivity table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.sensitivity th,
+.sensitivity td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sensitivity th:first-child,
+.sensitivity td:first-child {
+  text-align: left;
+}
+
 .metric-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 13px;
   background: #fff;
+}
+
+.metric-card.muted-card {
+  opacity: .45;
 }
 
 .metric-card h3 {
@@ -635,6 +718,7 @@ canvas {
   .method-grid,
   .action-grid,
   .metrics-grid,
+  .sensitivity,
   .backtest-controls {
     grid-template-columns: 1fr;
   }
@@ -645,7 +729,9 @@ canvas {
   .backtest-controls,
   .strategy-toggles,
   .chart-wrap,
+  .chart-readout,
   .metrics-grid,
+  .sensitivity,
   .backtest-panel .small-note {
     margin-left: 14px;
     margin-right: 14px;

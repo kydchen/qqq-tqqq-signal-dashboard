@@ -18,8 +18,6 @@ const actionVisuals = {
   normalDca: { icon: "Q", color: "#1d4ed8" },
 };
 
-const DEFAULT_MONTHLY = 1000;
-
 const copy = {
   zh: {
     eyebrow: "QQQ / TQQQ",
@@ -47,27 +45,33 @@ const copy = {
       lowVol: "低波动",
     },
     methodKicker: "计算方法",
-    methodTitle: "三类信号，按月决策",
+    methodTitle: "三类信号，每日判断、按月入金",
     actionCatalogKicker: "动作清单",
     actionCatalogTitle: "三信号策略会做什么",
     actionCatalogNote: "三信号策略按低位、快崩、高位、常态四类规则处理。快崩、过热、高位暂停时，当月新增资金不买 QQQ/TQQQ，留现金；三个基准策略只按月买入，不卖出。",
     backtestKicker: "收益回测",
     backtestTitle: "比较不同定投方式",
+    sensitivityTitle: "参数敏感性",
+    sensitivityNote: "三信号策略用深跌阈值和恐慌 VIX 阈值做 ±20% 网格重跑。",
     startLabel: "起始时间",
     monthlyFixedLabel: "每月固定投入",
-    trendLabel: "显示 log 趋势拟合线",
+    trendLabel: "显示单位净值趋势线",
+    scaleLabel: "对数纵轴",
     actionMarkersLabel: "浮窗显示月度动作",
-    backtestNote: "回测固定为每月投入 $1,000。Nasdaq-100 指数代理 QQQ；TQQQ 用 3x 日收益再平衡合成，未扣除基金费、税费、滑点和股息。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。三信号策略包含现金仓、小底 QQQ 加仓、大底后 6 个月把 TQQQ 提到约 90%、高位 TQQQ 锁利卖出，并保留 20% TQQQ 地板仓。",
+    backtestNote: "回测固定为每月投入 $1,000。Nasdaq-100 指数代理 QQQ，并加入 0.7% 年化股息近似；TQQQ 用 3x 日收益再平衡合成，扣 0.95% 年费与约 2 倍短端融资成本；现金按近似短端利率计息。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。三信号策略包含现金仓、小底 QQQ 加仓、大底分批 TQQQ 进攻、大底后 6 个月把 TQQQ 提到约 90%、高位 TQQQ 锁利卖出，并保留 20% TQQQ 地板仓。",
     sources: "数据源：",
     error: "数据加载失败：",
+    errorTitle: "数据暂时不可用",
+    loadingBacktest: "正在更新回测...",
+    emptyChart: "没有可显示的数据。请换一个起始年份。",
     methods: [
       {
         title: "估值：CAPE 历史分位",
-        body: "取最新 Shiller PE/CAPE，与 1871 年以来的月度历史值比较。低于 20% 代表便宜，高于 70% 代表高估，高于 85% 进入泡沫警戒。它是宽市场估值锚和月频慢变量，故意用长历史判断贵/便宜，不和 5 日走势做同类比较，也不是 Nasdaq-100 的精确估值。"
+        body: "取最新 Shiller PE/CAPE，与过去 30 年月度历史值做滚动分位比较。低于 20% 代表便宜，高于 70% 代表高估，高于 85% 进入泡沫警戒。它是宽市场估值锚和月频慢变量，不是 Nasdaq-100 的精确估值。"
       },
       {
         title: "趋势：回撤与快崩",
-        body: "用 Nasdaq-100 最近 5 个交易日均值，相对历史最高值计算回撤；再与约 25 个交易日前的 5 日均值比较。回撤超过 20% 是深跌，25 日跌超 12% 先按风控处理。"
+        body: "用 Nasdaq-100 最近 5 个交易日均值，相对过去约 5 年的 5 日均值高点计算回撤；再与约 25 个交易日前的 5 日均值比较。回撤超过 20% 是深跌，25 日跌超 12% 先按风控处理。"
       },
       {
         title: "恐慌：VIX 5 日均值",
@@ -75,7 +79,7 @@ const copy = {
       }
     ],
     decisions: {
-      bottomAttack: ["大底进攻", "现金仓全部买入 TQQQ；随后 6 个月继续把组合里的 TQQQ 提到约 90%。", "这是低估、深跌、恐慌共振时才触发的进攻动作。"],
+      bottomAttack: ["大底进攻", "先用约 1/3 现金仓买 TQQQ；随后 6 个月继续把组合里的 TQQQ 提到约 90%。", "这是低估、深跌、恐慌共振时才触发的分批进攻动作。"],
       smallDipBuy: ["小底加仓", "最多用 2 倍月投入买 QQQ；多余现金继续等待更强信号。", "这是折扣区，不是梭哈区。"],
       crashDefense: ["快崩风控", "卖出约一半 TQQQ；当月新增资金不买 QQQ/TQQQ，留现金。", "快崩阶段先活下来，再考虑抄底。"],
       pauseAtHigh: ["高位暂停", "本月暂停新增 QQQ/TQQQ 买入，新增资金进入现金仓。", "高估且贴近新高时，策略赚的是耐心，不是追涨。"],
@@ -83,8 +87,8 @@ const copy = {
       normalDca: ["正常定投", "如果 TQQQ 低于组合 20%，先用当月资金和现金补买 TQQQ；补足后剩余资金买 QQQ。现金仓每月最多拿 1/6 补买 QQQ。", "没有低位信号时，只保留小杠杆底仓，不主动追高。"],
     },
     actions: {
-      bottomAttack: { title: "大底进攻", condition: "2-3 个低位信号同时亮", operation: "现金仓 + 当月新增资金全部买 TQQQ" },
-      rampTqqq: { title: "大底后加速", condition: "大底进攻后的 6 个月", operation: "先用当月 $1,000 买 TQQQ；还不够 90% 时，卖出一部分 QQQ 换成 TQQQ" },
+      bottomAttack: { title: "大底进攻", condition: "2-3 个低位信号同时亮", operation: "先用约 1/3 现金仓买 TQQQ，剩余现金留给后续 6 个月" },
+      rampTqqq: { title: "大底后加速", condition: "大底进攻后的 6 个月", operation: "用当月 $1,000 和约 1/6 现金继续买 TQQQ；还不够 90% 时，卖出一部分 QQQ 换成 TQQQ" },
       smallDipBuy: { title: "小底加仓", condition: "只有 1 个低位信号亮", operation: "最多 2x 月投入买 QQQ" },
       crashDefense: { title: "快崩风控", condition: "25 日跌幅 <= -12%，且没有低位共振", operation: "卖出约 1/2 TQQQ；当月不买 QQQ/TQQQ，留现金" },
       trimHeat: { title: "过热锁利", condition: "过热或低波动持续 6 个月以上", operation: "卖出约 1/12 TQQQ；当月不买 QQQ/TQQQ，留现金" },
@@ -103,19 +107,22 @@ const copy = {
     strategies: {
       qqq: "QQQ 定投",
       tqqq: "TQQQ 定投",
-      blend8020: "80% QQQ / 20% TQQQ 定投",
+      blend8020: "新增资金 80/20（不再平衡）",
       signal: "三信号策略",
     },
     metricLabels: {
       finalValue: "期末资产",
       multiple: "投入倍数",
       irr: "IRR",
-      maxDrawdown: "最大回撤",
-      regression: "log 趋势年化",
+      maxDrawdown: "净值最大回撤",
+      regression: "单位净值趋势年化",
+      sharpe: "Sharpe",
+      ulcer: "Ulcer",
+      bottomAttack: "大底次数",
       shortSample: "样本太短",
     },
-    meta: (data) => `生成时间 ${data.generatedAt}；CAPE 日期 ${data.indicators.cape.date}；纳指最新日期 ${data.indicators.nasdaq100.date}；低位信号 ${data.decision.lowSignalCount}/3。`,
-    capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}；样本 ${cape.historyCount} 个月。`,
+    meta: (data) => `生成时间 ${fmtDateTime(data.generatedAt)}；CAPE 日期 ${data.indicators.cape.date}；纳指最新日期 ${fmtDate(data.indicators.nasdaq100.date)}；低位信号 ${data.decision.lowSignalCount}/3。${data.staleSources?.length ? ` 使用旧数据：${data.staleSources.join("、")}。` : ""}`,
+    capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}；滚动样本 ${cape.rollingMonths || 360} 个月；便宜上次 ${cape.lastCheap?.label || "无"}。`,
     ddNote: (ndx) => `5 日均值 ${fmtNumber(ndx.level5dAvg, 0)}；25 日变化 ${fmtPct(ndx.crash25dPct)}。`,
     vixNote: (vix) => `最新 ${vix.latest.toFixed(2)}；日期 ${vix.date}。`,
   },
@@ -145,27 +152,33 @@ const copy = {
       lowVol: "Low vol",
     },
     methodKicker: "Method",
-    methodTitle: "Three monthly signals",
+    methodTitle: "Daily signals, monthly funding",
     actionCatalogKicker: "Action list",
     actionCatalogTitle: "What the signal strategy can do",
     actionCatalogNote: "The signal strategy handles low-signal, fast-crash, high-heat, and normal regimes. In fast-crash, heat-trim, and pause-at-high months, new cash does not buy QQQ/TQQQ. Benchmarks only buy monthly and never sell.",
     backtestKicker: "Return backtest",
     backtestTitle: "Compare DCA variants",
+    sensitivityTitle: "Parameter sensitivity",
+    sensitivityNote: "The signal strategy is rerun on a +/-20% grid for deep-drawdown and panic-VIX thresholds.",
     startLabel: "Start date",
     monthlyFixedLabel: "Fixed monthly buy",
-    trendLabel: "Show log trend fit",
+    trendLabel: "Show unit-NAV trend",
+    scaleLabel: "Log y-axis",
     actionMarkersLabel: "Show actions in tooltip",
-    backtestNote: "Backtest uses a fixed $1,000 monthly contribution. Nasdaq-100 is used as a QQQ proxy. TQQQ is synthesized from 3x daily Nasdaq-100 returns before fees, taxes, slippage, and dividends. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings. The signal strategy includes cash, small-dip QQQ buying, a 6-month post-bottom move toward 90% TQQQ, high-heat TQQQ trimming, and a 20% TQQQ floor.",
+    backtestNote: "Backtest uses a fixed $1,000 monthly contribution. Nasdaq-100 is used as a QQQ proxy with a 0.7% annual dividend approximation. TQQQ is synthesized from 3x daily returns after a 0.95% expense-ratio drag and approximate 2x short-rate financing cost. Cash earns approximate short-rate interest. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings.",
     sources: "Sources: ",
     error: "Data load failed: ",
+    errorTitle: "Data unavailable",
+    loadingBacktest: "Updating backtest...",
+    emptyChart: "No chart data is available. Pick another start year.",
     methods: [
       {
         title: "Valuation: CAPE percentile",
-        body: "Compare the latest Shiller PE/CAPE with monthly history back to 1871. Below 20% is cheap, above 70% is expensive, and above 85% is bubble-watch territory. It is a broad-market valuation anchor and slow monthly variable, intentionally using long history for cheap/expensive context instead of acting like a 5-day timing signal; it is not a precise Nasdaq-100 valuation."
+        body: "Compare the latest Shiller PE/CAPE with a rolling 30-year monthly window. Below 20% is cheap, above 70% is expensive, and above 85% is bubble-watch territory. It is a broad-market valuation anchor and slow monthly variable, not a precise Nasdaq-100 valuation."
       },
       {
         title: "Trend: drawdown and fast crash",
-        body: "Use the Nasdaq-100 5-day average versus its running high to measure drawdown, then compare it with the 5-day average around 25 trading days ago. A 20% drawdown is deep; a 12% 25-day drop triggers risk control first."
+        body: "Use the Nasdaq-100 5-day average versus its rolling 5-year high to measure drawdown, then compare it with the 5-day average around 25 trading days ago. A 20% drawdown is deep; a 12% 25-day drop triggers risk control first."
       },
       {
         title: "Fear: VIX 5-day average",
@@ -173,7 +186,7 @@ const copy = {
       }
     ],
     decisions: {
-      bottomAttack: ["Bottom attack", "Deploy all cash into TQQQ, then spend 6 months lifting TQQQ toward about 90% of the portfolio.", "This only fires when cheap valuation, deep drawdown, and panic start to converge."],
+      bottomAttack: ["Bottom attack", "Deploy about 1/3 of cash into TQQQ, then spend 6 months lifting TQQQ toward about 90% of the portfolio.", "This staged attack only fires when cheap valuation, deep drawdown, and panic start to converge."],
       smallDipBuy: ["Small dip buy", "Buy QQQ with up to 2x the monthly contribution; keep excess cash for stronger signals.", "This is a discount zone, not an all-in signal."],
       crashDefense: ["Fast-crash defense", "Sell about half of TQQQ into cash. New monthly cash does not buy QQQ/TQQQ.", "Survive the fast crash before trying to catch the bottom."],
       pauseAtHigh: ["Pause at high", "Pause new QQQ/TQQQ buying this month. Route new money to cash.", "When valuation is high near the index high, patience is the edge."],
@@ -181,8 +194,8 @@ const copy = {
       normalDca: ["Normal DCA", "If TQQQ is below 20% of the portfolio, use monthly money and cash to buy TQQQ first. After that, buy QQQ. Each month, use up to 1/6 of extra cash to buy QQQ.", "Without low signals, keep only a small leverage floor instead of chasing."],
     },
     actions: {
-      bottomAttack: { title: "Bottom attack", condition: "2-3 low signals are on", operation: "Deploy cash + monthly contribution into TQQQ" },
-      rampTqqq: { title: "Post-bottom ramp", condition: "6 months after a bottom attack", operation: "Buy TQQQ with the monthly $1,000; if still below 90%, sell part of QQQ and buy TQQQ" },
+      bottomAttack: { title: "Bottom attack", condition: "2-3 low signals are on", operation: "Deploy about 1/3 of cash into TQQQ; keep the rest for the next 6 months" },
+      rampTqqq: { title: "Post-bottom ramp", condition: "6 months after a bottom attack", operation: "Use the monthly $1,000 and about 1/6 of cash to buy TQQQ; if still below 90%, sell part of QQQ and buy TQQQ" },
       smallDipBuy: { title: "Small dip buy", condition: "Exactly 1 low signal is on", operation: "Buy QQQ with up to 2x monthly contribution" },
       crashDefense: { title: "Fast-crash defense", condition: "25-day drop <= -12%, without low-signal convergence", operation: "Sell about 1/2 of TQQQ; do not buy QQQ/TQQQ this month" },
       trimHeat: { title: "Trim heat", condition: "Heat/quiet regime lasts 6+ months", operation: "Sell about 1/12 of TQQQ; do not buy QQQ/TQQQ this month" },
@@ -201,29 +214,51 @@ const copy = {
     strategies: {
       qqq: "QQQ DCA",
       tqqq: "TQQQ DCA",
-      blend8020: "80% QQQ / 20% TQQQ DCA",
+      blend8020: "New-cash 80/20, no rebalance",
       signal: "Three-signal",
     },
     metricLabels: {
       finalValue: "Final value",
       multiple: "Multiple",
       irr: "IRR",
-      maxDrawdown: "Max drawdown",
-      regression: "Log-trend annualized",
+      maxDrawdown: "NAV max drawdown",
+      regression: "Unit-NAV trend annualized",
+      sharpe: "Sharpe",
+      ulcer: "Ulcer",
+      bottomAttack: "Bottom attacks",
       shortSample: "Too short",
     },
-    meta: (data) => `Generated ${data.generatedAt}; CAPE date ${data.indicators.cape.date}; Nasdaq latest ${data.indicators.nasdaq100.date}; low signals ${data.decision.lowSignalCount}/3.`,
-    capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}; ${cape.historyCount} monthly observations.`,
+    meta: (data) => `Generated ${fmtDateTime(data.generatedAt)}; CAPE date ${data.indicators.cape.date}; Nasdaq latest ${fmtDate(data.indicators.nasdaq100.date)}; low signals ${data.decision.lowSignalCount}/3.${data.staleSources?.length ? ` Stale: ${data.staleSources.join(", ")}.` : ""}`,
+    capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}; rolling sample ${cape.rollingMonths || 360} months; last cheap ${cape.lastCheap?.label || "none"}.`,
     ddNote: (ndx) => `5-day average ${fmtNumber(ndx.level5dAvg, 0)}; 25-day change ${fmtPct(ndx.crash25dPct)}.`,
     vixNote: (vix) => `Latest ${vix.latest.toFixed(2)}; date ${vix.date}.`,
   },
 };
 
-let lang = "zh";
+function initialLang() {
+  try {
+    const saved = localStorage.getItem("lang");
+    if (saved === "zh" || saved === "en") return saved;
+  } catch {}
+  return (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+function setLang(nextLang) {
+  lang = nextLang;
+  try {
+    localStorage.setItem("lang", nextLang);
+  } catch {}
+  renderStatic();
+}
+
+let lang = initialLang();
 let marketData = null;
 let backtestData = null;
 let selected = new Set(["qqq", "blend8020", "signal"]);
 let showActionMarkers = false;
+let errorMessage = "";
+let backtestRequestId = 0;
+let resizeFrame = 0;
 
 function fmtPct(n, digits = 1) {
   return `${Number(n).toFixed(digits)}%`;
@@ -233,12 +268,69 @@ function fmtMoney(n) {
   return `$${Math.round(n).toLocaleString("en-US")}`;
 }
 
+function fmtCompactMoney(n) {
+  const value = Math.abs(n);
+  if (value >= 1000000) return `$${(n / 1000000).toFixed(value >= 10000000 ? 1 : 2)}M`;
+  if (value >= 1000) return `$${(n / 1000).toFixed(value >= 10000 ? 0 : 1)}K`;
+  return fmtMoney(n);
+}
+
 function fmtNumber(n, digits = 1) {
   return Number(n).toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits });
 }
 
+function fmtDate(date) {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", { timeZone: "UTC", year: "numeric", month: "short", day: "numeric" });
+}
+
+function fmtDateTime(date) {
+  return new Date(date).toLocaleString(lang === "zh" ? "zh-CN" : "en-US", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  }[char]));
+}
+
 function hasRegression(strategy) {
   return Number.isFinite(strategy.regression?.annualized);
+}
+
+function renderError() {
+  const error = $("error");
+  error.hidden = !errorMessage;
+  error.textContent = errorMessage ? `${copy[lang].error}${errorMessage}` : "";
+  if (errorMessage && !marketData) {
+    $("action").textContent = copy[lang].errorTitle;
+    $("operation").textContent = errorMessage;
+    $("risk").textContent = "";
+  }
+}
+
+function showError(message) {
+  errorMessage = message;
+  renderError();
+}
+
+function clearError() {
+  errorMessage = "";
+  renderError();
+}
+
+function setChartState(message = "") {
+  const el = $("chartState");
+  el.hidden = !message;
+  el.textContent = message;
+}
+
+function setBacktestLoading(on) {
+  $("startInput").disabled = on;
+  if (on) setChartState(copy[lang].loadingBacktest);
 }
 
 function setStatus(dotId, labelId, cls, label) {
@@ -268,12 +360,12 @@ function renderSparkline(id, points, formatValue) {
   const firstLabel = first.label || first.date;
   const lastLabel = last.label || last.date;
   el.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" aria-hidden="true">
+    <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
       <polyline points="${coords}"></polyline>
     </svg>
     <div class="spark-meta">
-      <span>${firstLabel}: ${formatValue(first.value)}</span>
-      <span>${lastLabel}: ${formatValue(last.value)}</span>
+      <span>${escapeHtml(firstLabel)}: ${formatValue(first.value)}</span>
+      <span>${escapeHtml(lastLabel)}: ${formatValue(last.value)}</span>
     </div>
   `;
 }
@@ -301,11 +393,13 @@ function renderStatic() {
   $("startLabel").textContent = t.startLabel;
   $("monthlyFixedLabel").textContent = t.monthlyFixedLabel;
   $("trendLabel").textContent = t.trendLabel;
+  $("scaleLabel").textContent = t.scaleLabel;
   $("actionMarkersLabel").textContent = t.actionMarkersLabel;
   $("actionsInput").checked = showActionMarkers;
   $("backtestNote").textContent = t.backtestNote;
   $("zhBtn").classList.toggle("active", lang === "zh");
   $("enBtn").classList.toggle("active", lang === "en");
+  renderError();
 
   $("methods").replaceChildren(...t.methods.map((item) => {
     const card = document.createElement("article");
@@ -315,7 +409,7 @@ function renderStatic() {
   }));
 
   renderActionCatalog();
-  if (!marketData) {
+  if (!marketData && !errorMessage) {
     $("action").textContent = t.loadingAction;
     $("operation").textContent = t.loadingOperation;
   }
@@ -346,7 +440,8 @@ function renderActionCatalog() {
 function chip(label, on) {
   const el = document.createElement("span");
   el.className = `chip${on ? " on" : ""}`;
-  el.textContent = label;
+  el.textContent = `${on ? "✓ " : ""}${label}`;
+  el.setAttribute("aria-label", `${label}: ${on ? "on" : "off"}`);
   return el;
 }
 
@@ -357,7 +452,7 @@ function renderMarket() {
   $("capeValue").textContent = fmtPct(cape.percentile);
   $("capeNote").textContent = t.capeNote(cape);
   const capeState = cape.percentile < 20
-    ? ["green", t.statusLabels.cheap]
+    ? ["blue", t.statusLabels.cheap]
     : cape.percentile >= 70
       ? ["red", t.statusLabels.expensive]
       : ["amber", t.statusLabels.neutral];
@@ -367,7 +462,7 @@ function renderMarket() {
   $("ddValue").textContent = fmtPct(nasdaq100.drawdownPct);
   $("ddNote").textContent = t.ddNote(nasdaq100);
   const ddState = nasdaq100.drawdownPct <= -20
-    ? ["green", t.statusLabels.deep]
+    ? ["blue", t.statusLabels.deep]
     : nasdaq100.crash25dPct <= -12
       ? ["red", t.statusLabels.fastCrash]
       : ["amber", t.statusLabels.normal];
@@ -377,7 +472,7 @@ function renderMarket() {
   $("vixValue").textContent = fmtNumber(vix.value5dAvg, 1);
   $("vixNote").textContent = t.vixNote(vix);
   const vixState = vix.value5dAvg >= 40
-    ? ["green", t.statusLabels.panic]
+    ? ["blue", t.statusLabels.panic]
     : vix.value5dAvg <= 12
       ? ["red", t.statusLabels.lowVol]
       : ["amber", t.statusLabels.normal];
@@ -428,7 +523,10 @@ function renderBacktest() {
   const t = copy[lang];
   const cards = backtestData.strategies.map((strategy) => {
     const card = document.createElement("article");
-    card.className = "metric-card";
+    card.className = `metric-card${selected.has(strategy.key) ? "" : " muted-card"}`;
+    const bottomRow = strategy.key === "signal"
+      ? `<div class="metric-row"><span>${t.metricLabels.bottomAttack}</span><strong>${strategy.actionCounts?.bottomAttack || 0}</strong></div>`
+      : "";
     card.innerHTML = `
       <h3><span class="swatch" style="display:inline-block;background:${colors[strategy.key]}"></span> ${t.strategies[strategy.key]}</h3>
       <div class="metric-row"><span>${t.metricLabels.finalValue}</span><strong>${fmtMoney(strategy.finalValue)}</strong></div>
@@ -436,24 +534,62 @@ function renderBacktest() {
       <div class="metric-row"><span>${t.metricLabels.irr}</span><strong>${strategy.irr == null ? "--" : fmtPct(strategy.irr * 100)}</strong></div>
       <div class="metric-row"><span>${t.metricLabels.maxDrawdown}</span><strong>${fmtPct(strategy.maxDrawdown * 100)}</strong></div>
       <div class="metric-row"><span>${t.metricLabels.regression}</span><strong>${hasRegression(strategy) ? fmtPct(strategy.regression.annualized * 100) : t.metricLabels.shortSample}</strong></div>
+      <div class="metric-row"><span>${t.metricLabels.sharpe}</span><strong>${strategy.risk?.sharpe == null ? "--" : fmtNumber(strategy.risk.sharpe, 2)}</strong></div>
+      <div class="metric-row"><span>${t.metricLabels.ulcer}</span><strong>${strategy.risk?.ulcer == null ? "--" : fmtNumber(strategy.risk.ulcer, 1)}</strong></div>
+      ${bottomRow}
     `;
     return card;
   });
   $("metrics").replaceChildren(...cards);
+  renderSensitivity();
 }
 
-function chartBounds(strategies) {
+function renderSensitivity() {
+  const data = backtestData?.sensitivity;
+  const el = $("sensitivity");
+  if (!data) {
+    el.replaceChildren();
+    return;
+  }
+  const t = copy[lang];
+  const rows = data.points.map((point) => `
+    <tr>
+      <td>${fmtPct(point.drawdownThreshold, 0)}</td>
+      <td>${fmtNumber(point.panicVixThreshold, 0)}</td>
+      <td>${fmtMoney(point.finalValue)}</td>
+      <td>${point.bottomAttackCount}</td>
+    </tr>
+  `).join("");
+  el.innerHTML = `
+    <div>
+      <h3>${t.sensitivityTitle}</h3>
+      <p>${t.sensitivityNote}</p>
+      <strong>${fmtMoney(data.minFinalValue)} - ${fmtMoney(data.maxFinalValue)}</strong>
+    </div>
+    <table>
+      <thead><tr><th>DD</th><th>VIX</th><th>Final</th><th>Bottom</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function chartBounds(strategies, logScale = false) {
+  let min = Infinity;
   let max = 1;
   for (const strategy of strategies) {
-    for (const point of strategy.points) max = Math.max(max, point.value);
+    for (const point of strategy.points) {
+      max = Math.max(max, point.value);
+      if (point.value > 0) min = Math.min(min, point.value);
+    }
     if ($("trendInput").checked && hasRegression(strategy)) {
       for (const point of strategy.points) {
-        const y = Math.exp(strategy.regression.intercept + strategy.regression.slope * point.year);
+        const y = Math.exp(strategy.regression.intercept + strategy.regression.slope * point.year) * point.units;
         max = Math.max(max, y);
+        if (y > 0) min = Math.min(min, y);
       }
     }
   }
-  return { min: 0, max: max * 1.08 };
+  return { min: logScale ? Math.max(1, min * 0.85) : 0, max: max * 1.08 };
 }
 
 function renderChart() {
@@ -461,23 +597,45 @@ function renderChart() {
   const wrap = canvas.parentElement;
   const rect = wrap.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.max(640, Math.floor(rect.width * dpr));
+  canvas.onmousemove = null;
+  canvas.onmouseleave = null;
+  canvas.onpointermove = null;
+  canvas.onpointerdown = null;
+  canvas.onpointerleave = null;
+  $("tooltip").hidden = true;
+  $("chartReadout").textContent = "";
+  setChartState("");
+  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
   canvas.height = Math.max(320, Math.floor(rect.height * dpr));
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
   const width = canvas.width / dpr;
   const height = canvas.height / dpr;
-  const pad = { left: 96, right: 24, top: 24, bottom: 42 };
+  const pad = { left: width < 620 ? 72 : 86, right: 24, top: 24, bottom: 42 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   ctx.clearRect(0, 0, width, height);
 
   const strategies = backtestData.strategies.filter((strategy) => selected.has(strategy.key));
-  if (!strategies.length) return;
-  const bounds = chartBounds(strategies);
+  if (!strategies.length || !strategies[0].points.length || plotW <= 0) {
+    setChartState(copy[lang].emptyChart);
+    canvas.setAttribute("aria-label", copy[lang].emptyChart);
+    return;
+  }
+  canvas.setAttribute("aria-label", strategies.map((strategy) => {
+    const last = strategy.points.at(-1);
+    return `${copy[lang].strategies[strategy.key]} ${fmtMoney(last.value)}`;
+  }).join("; "));
+  const logScale = $("scaleInput").checked;
+  const bounds = chartBounds(strategies, logScale);
   const pointCount = strategies[0].points.length;
   const xFor = (i) => pad.left + (pointCount <= 1 ? 0 : i / (pointCount - 1)) * plotW;
-  const yFor = (value) => pad.top + plotH - (value - bounds.min) / (bounds.max - bounds.min) * plotH;
+  const yFor = (value) => {
+    if (!logScale) return pad.top + plotH - (value - bounds.min) / (bounds.max - bounds.min) * plotH;
+    const lo = Math.log(bounds.min);
+    const hi = Math.log(bounds.max);
+    return pad.top + plotH - (Math.log(Math.max(value, bounds.min)) - lo) / (hi - lo) * plotH;
+  };
 
   ctx.strokeStyle = "#d4dbe5";
   ctx.lineWidth = 1;
@@ -494,16 +652,20 @@ function renderChart() {
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   for (let i = 0; i <= 4; i += 1) {
-    const value = bounds.max - ((bounds.max - bounds.min) * i) / 4;
-    ctx.fillText(fmtMoney(value), pad.left - 10, pad.top + (plotH * i) / 4);
+    const value = logScale
+      ? Math.exp(Math.log(bounds.max) - ((Math.log(bounds.max) - Math.log(bounds.min)) * i) / 4)
+      : bounds.max - ((bounds.max - bounds.min) * i) / 4;
+    ctx.fillText(fmtCompactMoney(value), pad.left - 10, pad.top + (plotH * i) / 4);
   }
 
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   const labels = [0, Math.floor((pointCount - 1) / 2), pointCount - 1];
-  for (const i of labels) {
+  const uniqueLabels = [...new Set(labels)];
+  const useMonthLabel = new Set(uniqueLabels.map((i) => (strategies[0].points[i]?.date || "").slice(0, 4))).size < uniqueLabels.length;
+  for (const i of uniqueLabels) {
     const date = strategies[0].points[i]?.date || "";
-    ctx.fillText(date.slice(0, 4), xFor(i), height - pad.bottom + 14);
+    ctx.fillText(useMonthLabel ? date.slice(0, 7) : date.slice(0, 4), xFor(i), height - pad.bottom + 14);
   }
 
   for (const strategy of strategies) {
@@ -525,8 +687,9 @@ function renderChart() {
       ctx.beginPath();
       strategy.points.forEach((point, i) => {
         const yValue = Math.exp(strategy.regression.intercept + strategy.regression.slope * point.year);
+        const accountValue = yValue * point.units;
         const x = xFor(i);
-        const y = yFor(yValue);
+        const y = yFor(accountValue);
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       });
@@ -535,7 +698,7 @@ function renderChart() {
     }
   }
 
-  canvas.onmousemove = (event) => {
+  const showTooltip = (event) => {
     const chartRect = canvas.getBoundingClientRect();
     const x = event.clientX - chartRect.left;
     if (x < pad.left || x > width - pad.right) {
@@ -554,51 +717,89 @@ function renderChart() {
       return `<div><span style="color:${colors[strategy.key]}">●</span> ${copy[lang].strategies[strategy.key]}: <strong>${fmtMoney(point.value)}</strong></div>`;
     }).join("");
     const tip = $("tooltip");
-    tip.innerHTML = `<strong>${strategies[0].points[index].date}</strong>${actionRow}${rows}`;
+    const dateLabel = fmtDate(strategies[0].points[index].date);
+    tip.innerHTML = `<strong>${dateLabel}</strong>${actionRow}${rows}`;
+    $("chartReadout").innerHTML = `<strong>${dateLabel}</strong>${actionRow}${rows}`;
     tip.hidden = false;
-    tip.style.left = `${Math.min(width - 300, Math.max(8, x + 14))}px`;
-    tip.style.top = `${Math.max(8, event.clientY - chartRect.top - 20)}px`;
+    const tipW = tip.offsetWidth || 280;
+    const tipH = tip.offsetHeight || 80;
+    tip.style.left = `${Math.min(width - tipW - 8, Math.max(8, x + 14))}px`;
+    tip.style.top = `${Math.min(height - tipH - 8, Math.max(8, event.clientY - chartRect.top - 20))}px`;
   };
+  canvas.onpointermove = showTooltip;
+  canvas.onpointerdown = showTooltip;
+  canvas.onpointerleave = () => { $("tooltip").hidden = true; };
+  canvas.onmousemove = showTooltip;
   canvas.onmouseleave = () => { $("tooltip").hidden = true; };
 }
 
 async function fetchJson(url) {
   const res = await fetch(url, { cache: "no-store" });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    throw new Error("Invalid JSON response");
+  }
+  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
   return data;
 }
 
 async function loadMarket() {
-  marketData = await fetchJson("/api/market");
-  renderMarket();
-}
-
-async function loadBacktest() {
-  const start = $("startInput").value;
-  backtestData = await fetchJson(`/api/backtest?start=${encodeURIComponent(start)}&monthly=${DEFAULT_MONTHLY}`);
-  renderBacktest();
-}
-
-async function loadAll() {
-  $("error").hidden = true;
-  const results = await Promise.allSettled([loadMarket(), loadBacktest()]);
-  const errors = results.filter((result) => result.status === "rejected").map((result) => result.reason.message);
-  if (errors.length) {
-    $("error").hidden = false;
-    $("error").textContent = `${copy[lang].error}${errors.join(" / ")}`;
+  try {
+    marketData = await fetchJson("/api/market");
+    renderMarket();
+  } catch (error) {
+    showError(error.message);
   }
 }
 
-$("zhBtn").addEventListener("click", () => { lang = "zh"; renderStatic(); });
-$("enBtn").addEventListener("click", () => { lang = "en"; renderStatic(); });
+async function loadBacktest() {
+  const requestId = ++backtestRequestId;
+  const start = $("startInput").value;
+  setBacktestLoading(true);
+  try {
+    const data = await fetchJson(`/api/backtest?start=${encodeURIComponent(start)}`);
+    if (requestId !== backtestRequestId) return;
+    backtestData = data;
+    if (marketData) clearError();
+    renderBacktest();
+  } catch (error) {
+    if (requestId !== backtestRequestId) return;
+    showError(error.message);
+    setChartState(error.message);
+  } finally {
+    if (requestId === backtestRequestId) setBacktestLoading(false);
+  }
+}
+
+async function loadAll() {
+  clearError();
+  const results = await Promise.allSettled([loadMarket(), loadBacktest()]);
+  const errors = results.filter((result) => result.status === "rejected").map((result) => result.reason.message);
+  if (errors.length) {
+    showError(errors.join(" / "));
+  }
+}
+
+$("zhBtn").addEventListener("click", () => { setLang("zh"); });
+$("enBtn").addEventListener("click", () => { setLang("en"); });
 $("startInput").addEventListener("change", loadBacktest);
 $("trendInput").addEventListener("change", renderBacktest);
+$("scaleInput").addEventListener("change", renderBacktest);
 $("actionsInput").addEventListener("change", (event) => {
   showActionMarkers = event.currentTarget.checked;
   renderBacktest();
 });
-window.addEventListener("resize", () => { if (backtestData) renderChart(); });
+window.addEventListener("resize", () => {
+  if (!backtestData || resizeFrame) return;
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = 0;
+    renderChart();
+  });
+});
 
 renderStatic();
 loadAll();
