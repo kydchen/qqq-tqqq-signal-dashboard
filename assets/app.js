@@ -63,7 +63,7 @@ const copy = {
     methods: [
       {
         title: "估值：CAPE 历史分位",
-        body: "取最新 Shiller PE/CAPE，与 1871 年以来的月度历史值比较。低于 20% 代表便宜，高于 70% 代表高估，高于 85% 进入泡沫警戒。它是月频慢变量，故意用长历史判断贵/便宜，不和 5 日走势做同类比较。"
+        body: "取最新 Shiller PE/CAPE，与 1871 年以来的月度历史值比较。低于 20% 代表便宜，高于 70% 代表高估，高于 85% 进入泡沫警戒。它是宽市场估值锚和月频慢变量，故意用长历史判断贵/便宜，不和 5 日走势做同类比较，也不是 Nasdaq-100 的精确估值。"
       },
       {
         title: "趋势：回撤与快崩",
@@ -161,7 +161,7 @@ const copy = {
     methods: [
       {
         title: "Valuation: CAPE percentile",
-        body: "Compare the latest Shiller PE/CAPE with monthly history back to 1871. Below 20% is cheap, above 70% is expensive, and above 85% is bubble-watch territory. It is a slow monthly variable, intentionally using long history for cheap/expensive context instead of acting like a 5-day timing signal."
+        body: "Compare the latest Shiller PE/CAPE with monthly history back to 1871. Below 20% is cheap, above 70% is expensive, and above 85% is bubble-watch territory. It is a broad-market valuation anchor and slow monthly variable, intentionally using long history for cheap/expensive context instead of acting like a 5-day timing signal; it is not a precise Nasdaq-100 valuation."
       },
       {
         title: "Trend: drawdown and fast crash",
