@@ -16,7 +16,10 @@ module.exports = async function handler(req, res) {
     return {
       staleSources: data.staleSources,
       nasdaqLatest: data.nasdaq.at(-1),
+      qqqLatest: data.qqq.at(-1),
+      tqqqLatest: data.tqqq.at(-1),
       vixLatest: data.vix.at(-1),
+      ratesLatest: data.rates.at(-1),
       capeLatest: data.capeLatestFirst[0],
     };
   })];

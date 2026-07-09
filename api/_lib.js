@@ -19,11 +19,22 @@ const DEFAULT_THRESHOLDS = {
   panicVix: 40,
   quietVix: 12,
 };
+const ACTION_KEYS = ["bottomAttack", "rampTqqq", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"];
+const EVENT_WINDOWS = [
+  { key: "dotcom", start: "2000-03-31", end: "2002-10-31" },
+  { key: "gfc", start: "2007-10-31", end: "2009-03-31" },
+  { key: "covid", start: "2020-02-29", end: "2020-04-30" },
+  { key: "rate2022", start: "2021-11-30", end: "2022-12-31" },
+  { key: "ai2023", start: "2023-01-31", end: "2024-12-31" },
+  { key: "tariff2025", start: "2025-04-01", end: "2025-05-31" },
+];
 
 const sourceCache = {
   nasdaq: null,
   qqq: null,
+  tqqq: null,
   vix: null,
+  rates: null,
   capeLatestFirst: null,
 };
 let capeSnapshot = null;
@@ -76,7 +87,7 @@ async function fetchText(url, timeoutMs = 6000, headers = {}) {
   throw lastError;
 }
 
-async function fetchYahooSeries(symbol, name) {
+async function fetchYahooSeries(symbol, name, options = {}) {
   const period1 = symbol === "^VIX" ? VIX_PERIOD1 : NDX_PERIOD1;
   const period2 = Math.floor(Date.now() / 1000) + 86400;
   const url = `${YAHOO_CHART}${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=history`;
@@ -85,15 +96,32 @@ async function fetchYahooSeries(symbol, name) {
   const result = payload.chart?.result?.[0];
   const timestamps = result?.timestamp || [];
   const closes = result?.indicators?.quote?.[0]?.close || [];
+  const adjCloses = result?.indicators?.adjclose?.[0]?.adjclose || [];
   const out = [];
   for (let i = 0; i < timestamps.length; i += 1) {
-    const value = Number(closes[i]);
-    if (Number.isFinite(value) && value > 0) {
-      out.push({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), value });
+    const close = Number(closes[i]);
+    const adjClose = Number(adjCloses[i]);
+    const value = options.adjusted && Number.isFinite(adjClose) && adjClose > 0 ? adjClose : close;
+    if (Number.isFinite(value) && value > 0 && Number.isFinite(close) && close > 0) {
+      const point = { date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), value };
+      if (options.adjusted) {
+        point.close = close;
+        point.adjClose = Number.isFinite(adjClose) && adjClose > 0 ? adjClose : null;
+      }
+      out.push(point);
     }
   }
   if (out.length < 60) throw new Error(`${name} returned too few observations`);
   return out;
+}
+
+async function fetchFredSeries(id) {
+  const csv = await fetchText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(id)}`);
+  return csv.trim().split(/\r?\n/).slice(1).map((line) => {
+    const [date, raw] = line.split(",");
+    const value = Number(raw);
+    return Number.isFinite(value) ? { date, value: value / 100 } : null;
+  }).filter(Boolean);
 }
 
 function cleanCell(text) {
@@ -147,9 +175,19 @@ async function loadData() {
     }),
     cachedSource("qqq", async () => {
       try {
-        return await fetchYahooSeries("QQQ", "QQQ");
+        return await fetchYahooSeries("QQQ", "QQQ", { adjusted: true });
       } catch (error) {
         const snapshot = loadJsonSnapshot("qqq-snapshot.json");
+        snapshot.fromSnapshot = true;
+        if (snapshot.length) return snapshot;
+        throw error;
+      }
+    }),
+    cachedSource("tqqq", async () => {
+      try {
+        return await fetchYahooSeries("TQQQ", "TQQQ", { adjusted: true });
+      } catch (error) {
+        const snapshot = loadJsonSnapshot("tqqq-snapshot.json");
         snapshot.fromSnapshot = true;
         if (snapshot.length) return snapshot;
         throw error;
@@ -160,6 +198,16 @@ async function loadData() {
         return await fetchYahooSeries("^VIX", "VIX");
       } catch (error) {
         const snapshot = loadJsonSnapshot("vix-snapshot.json");
+        snapshot.fromSnapshot = true;
+        if (snapshot.length) return snapshot;
+        throw error;
+      }
+    }),
+    cachedSource("rates", async () => {
+      try {
+        return await fetchFredSeries("FEDFUNDS");
+      } catch (error) {
+        const snapshot = loadJsonSnapshot("rates-snapshot.json");
         snapshot.fromSnapshot = true;
         if (snapshot.length) return snapshot;
         throw error;
@@ -178,16 +226,20 @@ async function loadData() {
   ]);
   const failed = sources.find((source) => source.status === "rejected");
   if (failed) throw failed.reason;
-  const [nasdaq, qqq, vix, cape] = sources.map((source) => source.value);
+  const [nasdaq, qqq, tqqq, vix, rates, cape] = sources.map((source) => source.value);
   return {
     nasdaq: nasdaq.data,
     qqq: qqq.data,
+    tqqq: tqqq.data,
     vix: vix.data,
+    rates: rates.data,
     capeLatestFirst: cape.data,
     staleSources: [
       nasdaq.stale ? "Nasdaq-100" : null,
       qqq.stale ? "QQQ" : null,
+      tqqq.stale ? "TQQQ" : null,
       vix.stale ? "VIX" : null,
+      rates.stale ? "Rates" : null,
       cape.stale ? "CAPE" : null,
     ].filter(Boolean),
   };
@@ -209,7 +261,9 @@ function loadJsonSnapshot(file) {
     const loaders = {
       "ndx-snapshot.json": () => require("../data/ndx-snapshot.json"),
       "qqq-snapshot.json": () => require("../data/qqq-snapshot.json"),
+      "tqqq-snapshot.json": () => require("../data/tqqq-snapshot.json"),
       "vix-snapshot.json": () => require("../data/vix-snapshot.json"),
+      "rates-snapshot.json": () => require("../data/rates-snapshot.json"),
     };
     jsonSnapshots[file] = loaders[file]?.() || [];
   } catch {
@@ -240,6 +294,23 @@ function shortRateForDate(date) {
   if (year < 2023) return 0.025;
   if (year < 2025) return 0.052;
   return 0.045;
+}
+
+function rateForDate(date, rates = []) {
+  if (!Array.isArray(rates) || !rates.length) return shortRateForDate(date);
+  let lo = 0;
+  let hi = rates.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (rates[mid].date <= date) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return found >= 0 && Number.isFinite(rates[found].value) ? rates[found].value : shortRateForDate(date);
 }
 
 function rollingPercentile(values, value, count = CAPE_ROLLING_MONTHS) {
@@ -351,8 +422,38 @@ function memoryAfterAction(memory, decision) {
   return memory;
 }
 
+function coverageForSeries(points) {
+  return {
+    start: points?.[0]?.date || null,
+    end: points?.at(-1)?.date || null,
+    count: Array.isArray(points) ? points.length : 0,
+  };
+}
+
+function buildDataQuality(data, prices = []) {
+  const actualTqqqStart = prices.find((point) => point.tqqqSource === "actual")?.date || data.tqqq?.[0]?.date || null;
+  const syntheticTqqqEnd = prices.findLast?.((point) => point.tqqqSource === "synthetic")?.date
+    || [...prices].reverse().find((point) => point.tqqqSource === "synthetic")?.date
+    || null;
+  return {
+    nasdaq: coverageForSeries(data.nasdaq),
+    qqq: coverageForSeries(data.qqq),
+    tqqq: coverageForSeries(data.tqqq),
+    vix: coverageForSeries(data.vix),
+    rates: coverageForSeries(data.rates),
+    cape: coverageForSeries([...data.capeLatestFirst].reverse()),
+    qqqActualStart: data.qqq?.[0]?.date || null,
+    tqqqActualStart: actualTqqqStart,
+    tqqqSyntheticEnd: syntheticTqqqEnd,
+    qqqAdjusted: true,
+    tqqqAdjusted: true,
+    rateSource: data.rates?.length ? "FEDFUNDS" : "approximation",
+  };
+}
+
 async function marketSnapshot() {
-  const { nasdaq, vix, capeLatestFirst, staleSources } = await loadData();
+  const data = await loadData();
+  const { nasdaq, qqq, tqqq, vix, rates, capeLatestFirst, staleSources } = data;
   const nasdaqValues = nasdaq.map((point) => point.value);
   const vixValues = vix.map((point) => point.value);
   const currentIndex = mean(nasdaqValues.slice(-5));
@@ -361,7 +462,7 @@ async function marketSnapshot() {
   const currentVix = mean(vixValues.slice(-5));
   const latestCape = capeLatestFirst[0];
   const capeValues = capeLatestFirst.map((point) => point.value);
-  const prices = buildPrices(nasdaq);
+  const prices = buildPrices(nasdaq, qqq, tqqq, rates);
   const capeChrono = [...capeLatestFirst].reverse();
   const states = buildStates(prices, nasdaq, vix, capeChrono);
   const currentMonth = prices.at(-1).date.slice(0, 7);
@@ -373,6 +474,7 @@ async function marketSnapshot() {
   return {
     generatedAt: new Date().toISOString(),
     staleSources,
+    dataQuality: buildDataQuality(data, prices),
     indicators: {
       cape: {
         date: latestCape.label,
@@ -397,6 +499,7 @@ async function marketSnapshot() {
         drawdownPct: currentState.drawdownPct,
         crash25dPct,
         recent: recentSeries(nasdaq, 5),
+        qqqClose: prices.at(-1).qqqClose,
       },
       vix: {
         date: vix.at(-1).date,
@@ -409,32 +512,78 @@ async function marketSnapshot() {
   };
 }
 
-function buildPrices(nasdaq) {
+function buildPrices(nasdaq, qqqSeries = [], tqqqSeries = [], rates = []) {
+  const qqqByDate = new Map((qqqSeries || []).map((point) => [point.date, point]));
+  const tqqqByDate = new Map((tqqqSeries || []).map((point) => [point.date, point]));
+  let qqqSynthetic = 1;
   let qqq = 1;
+  let qqqActualBase = null;
+  let qqqActualScale = 1;
+  let tqqqSynthetic = 1;
   let tqqq = 1;
+  let tqqqActualBase = null;
+  let tqqqActualScale = 1;
   let tqqqWipedOut = false;
+
   return nasdaq.map((point, index) => {
+    const shortRate = rateForDate(point.date, rates);
     if (index > 0) {
       const daily = point.value / nasdaq[index - 1].value - 1;
       const dailyDividend = QQQ_DIVIDEND_YIELD / 252;
-      const shortRate = shortRateForDate(point.date);
-      qqq *= Math.max(0, 1 + daily + dailyDividend);
+      qqqSynthetic *= Math.max(0, 1 + daily + dailyDividend);
       if (!tqqqWipedOut) {
         const tqqqCost = (TQQQ_EXPENSE_RATIO + 2 * (shortRate + TQQQ_SWAP_SPREAD)) / 252;
         const tqqqFactor = 1 + 3 * daily + 3 * dailyDividend - tqqqCost;
         if (tqqqFactor <= 0) {
-          tqqq = 0;
+          tqqqSynthetic = 0;
           tqqqWipedOut = true;
         } else {
-          tqqq *= tqqqFactor;
+          tqqqSynthetic *= tqqqFactor;
         }
       }
     }
+
+    const qqqActual = qqqByDate.get(point.date);
+    let qqqClose = null;
+    let qqqSource = "synthetic";
+    if (qqqActual && Number.isFinite(qqqActual.value) && qqqActual.value > 0) {
+      if (qqqActualBase == null) {
+        qqqActualBase = qqqActual.value;
+        qqqActualScale = qqqSynthetic;
+      }
+      qqq = (qqqActual.value / qqqActualBase) * qqqActualScale;
+      qqqClose = qqqActual.close || qqqActual.value;
+      qqqSource = "actual";
+    } else if (qqqActualBase == null) {
+      qqq = qqqSynthetic;
+    } else {
+      qqqSource = "actual-gap";
+    }
+
+    const tqqqActual = tqqqByDate.get(point.date);
+    let tqqqSource = "synthetic";
+    if (tqqqActual && Number.isFinite(tqqqActual.value) && tqqqActual.value > 0) {
+      if (tqqqActualBase == null) {
+        tqqqActualBase = tqqqActual.value;
+        tqqqActualScale = Math.max(tqqqSynthetic, 0.000001);
+      }
+      tqqq = (tqqqActual.value / tqqqActualBase) * tqqqActualScale;
+      tqqqSource = "actual";
+    } else if (tqqqActualBase == null) {
+      tqqq = tqqqSynthetic;
+    } else {
+      tqqqSource = "actual-gap";
+    }
+
     return {
       date: point.date,
       qqq,
       tqqq,
       ndx: point.value,
+      qqqClose,
+      qqqSource,
+      tqqqSource,
+      shortRate,
     };
   });
 }
@@ -459,8 +608,8 @@ function addContribution(portfolio, amount, prices) {
   portfolio.flows.push({ time: new Date(`${prices.date}T00:00:00Z`).getTime(), amount: -amount });
 }
 
-function accrueCash(portfolio, date) {
-  if (portfolio.cash > 0) portfolio.cash *= 1 + shortRateForDate(date) / 252;
+function accrueCash(portfolio, prices) {
+  if (portfolio.cash > 0) portfolio.cash *= 1 + (prices.shortRate ?? shortRateForDate(prices.date)) / 252;
 }
 
 function buyQQQ(portfolio, amount, price) {
@@ -518,13 +667,23 @@ function buyTQQQToTarget(portfolio, targetPct, prices, rotationPct = 0, cashLimi
 }
 
 function record(portfolio, prices, startTime, actionKey = null, qqqPrice = null) {
-  const value = valueOf(portfolio, prices);
+  const qqqValue = portfolio.qqq * prices.qqq;
+  const tqqqValue = portfolio.tqqq * prices.tqqq;
+  const cashValue = portfolio.cash;
+  const value = cashValue + qqqValue + tqqqValue;
   portfolio.points.push({
     date: prices.date,
     value,
     qqqPrice,
     nav: unitNav(portfolio, prices),
     units: portfolio.units,
+    cash: cashValue,
+    qqqValue,
+    tqqqValue,
+    cashWeight: value > 0 ? cashValue / value : 0,
+    qqqWeight: value > 0 ? qqqValue / value : 0,
+    tqqqWeight: value > 0 ? tqqqValue / value : 0,
+    tqqqSource: prices.tqqqSource,
     year: (new Date(`${prices.date}T00:00:00Z`).getTime() - startTime) / (365.25 * 24 * 3600 * 1000),
     actionKey,
   });
@@ -662,7 +821,15 @@ function applySignalAction(portfolio, decision, prices, monthlyAmount) {
   }
 }
 
-function summarizePortfolios(portfolios, finalPrices, actionCounts) {
+function emptyActionStats() {
+  return Object.fromEntries(ACTION_KEYS.map((key) => [key, { count: 0, estimatedPnL: 0 }]));
+}
+
+function actionCountsFromStats(actionStats) {
+  return Object.fromEntries(ACTION_KEYS.map((key) => [key, actionStats[key]?.count || 0]));
+}
+
+function summarizePortfolios(portfolios, finalPrices, actionStats) {
   return Object.entries(portfolios).map(([key, portfolio]) => {
     const finalValue = valueOf(portfolio, finalPrices);
     const finalTime = new Date(`${finalPrices.date}T00:00:00Z`).getTime();
@@ -677,7 +844,8 @@ function summarizePortfolios(portfolios, finalPrices, actionCounts) {
       regression: regression(portfolio.points),
       risk: riskStats(portfolio.points),
       points: portfolio.points,
-      actionCounts: key === "signal" ? actionCounts : undefined,
+      actionCounts: key === "signal" ? actionCountsFromStats(actionStats) : undefined,
+      actionStats: key === "signal" ? actionStats : undefined,
     };
   });
 }
@@ -714,9 +882,98 @@ function sensitivityGrid(data, startDate, monthlyAmount, states) {
   };
 }
 
-function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESHOLDS, states = null) {
-  const { nasdaq, qqq, vix, capeLatestFirst } = data;
-  const prices = buildPrices(nasdaq);
+function maxNavDrawdown(points) {
+  let peak = 0;
+  let drawdown = 0;
+  for (const point of points) {
+    peak = Math.max(peak, point.nav || 0);
+    if (peak > 0) drawdown = Math.min(drawdown, point.nav / peak - 1);
+  }
+  return drawdown;
+}
+
+function actionCountsInWindow(points) {
+  const counts = Object.fromEntries(ACTION_KEYS.map((key) => [key, 0]));
+  for (const point of points) {
+    if (point.actionKey && counts[point.actionKey] != null) counts[point.actionKey] += 1;
+  }
+  return counts;
+}
+
+function eventRecaps(strategies) {
+  return EVENT_WINDOWS.map((event) => {
+    const strategiesInWindow = strategies.map((strategy) => {
+      const points = strategy.points.filter((point) => point.date >= event.start && point.date <= event.end);
+      if (points.length < 2) return null;
+      const first = points[0];
+      const last = points.at(-1);
+      return {
+        key: strategy.key,
+        startValue: first.value,
+        endValue: last.value,
+        returnPct: first.value > 0 ? last.value / first.value - 1 : null,
+        maxDrawdown: maxNavDrawdown(points),
+        actionCounts: strategy.key === "signal" ? actionCountsInWindow(points) : undefined,
+      };
+    }).filter(Boolean);
+    return { ...event, strategies: strategiesInWindow };
+  }).filter((event) => event.strategies.length);
+}
+
+function thresholdVariants() {
+  const variants = [];
+  for (const drawdownScale of [0.8, 1, 1.2]) {
+    for (const vixScale of [0.8, 1, 1.2]) {
+      variants.push({
+        ...DEFAULT_THRESHOLDS,
+        deepDrawdown: DEFAULT_THRESHOLDS.deepDrawdown * drawdownScale,
+        panicVix: DEFAULT_THRESHOLDS.panicVix * vixScale,
+      });
+    }
+  }
+  return variants;
+}
+
+function walkForward(data, startDate, monthlyAmount, states) {
+  const latest = (data.prices || []).at(-1)?.date;
+  if (!latest) return [];
+  return ["2010-01-01", "2015-01-01", "2020-01-01", "2025-01-01"].filter((split) => split > startDate && split < latest).map((split) => {
+    let best = null;
+    for (const thresholds of thresholdVariants()) {
+      const result = runBacktest(data, startDate, monthlyAmount, thresholds, states, split);
+      const finalValue = valueOf(result.portfolios.signal, result.finalPrices);
+      if (!best || finalValue > best.trainFinalValue) {
+        best = {
+          thresholds,
+          trainFinalValue: finalValue,
+          trainBottomAttackCount: result.actionCounts.bottomAttack,
+        };
+      }
+    }
+    const bestForward = runBacktest(data, split, monthlyAmount, best.thresholds, states);
+    const defaultForward = runBacktest(data, split, monthlyAmount, DEFAULT_THRESHOLDS, states);
+    return {
+      split,
+      trainStart: startDate,
+      trainEnd: split,
+      validationStart: split,
+      validationEnd: bestForward.finalPrices.date,
+      bestThresholds: {
+        deepDrawdown: best.thresholds.deepDrawdown,
+        panicVix: best.thresholds.panicVix,
+      },
+      trainFinalValue: best.trainFinalValue,
+      trainBottomAttackCount: best.trainBottomAttackCount,
+      validationFinalValue: valueOf(bestForward.portfolios.signal, bestForward.finalPrices),
+      defaultValidationFinalValue: valueOf(defaultForward.portfolios.signal, defaultForward.finalPrices),
+      validationBottomAttackCount: bestForward.actionCounts.bottomAttack,
+    };
+  });
+}
+
+function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESHOLDS, states = null, endDate = null) {
+  const { nasdaq, vix, capeLatestFirst } = data;
+  const prices = data.prices || buildPrices(data.nasdaq, data.qqq, data.tqqq, data.rates);
   if (startDate > prices.at(-1).date) throw new HttpError(400, "Start is after the latest available market date.");
   const capeChrono = [...capeLatestFirst].reverse();
   const portfolios = {
@@ -732,12 +989,18 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
   let executedThisMonth = new Set();
   let monthAction = null;
   let previousPrice = null;
-  const actionCounts = Object.fromEntries(["bottomAttack", "rampTqqq", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"].map((key) => [key, 0]));
-  const qqqByDate = new Map((qqq || []).map((point) => [point.date, point.value]));
+  let lastSignalRecordedValue = null;
+  const actionStats = emptyActionStats();
 
   const recordMonth = () => {
     if (!previousPrice || startTime == null) return;
-    const qqqPrice = qqqByDate.get(previousPrice.date) || null;
+    const signalValue = valueOf(portfolios.signal, previousPrice);
+    const attributionKey = monthAction || "normalDca";
+    if (lastSignalRecordedValue != null && actionStats[attributionKey]) {
+      actionStats[attributionKey].estimatedPnL += signalValue - lastSignalRecordedValue - monthlyAmount;
+    }
+    lastSignalRecordedValue = signalValue;
+    const qqqPrice = previousPrice.qqqClose || null;
     for (const [key, portfolio] of Object.entries(portfolios)) {
       record(portfolio, previousPrice, startTime, key === "signal" ? monthAction : null, qqqPrice);
     }
@@ -746,9 +1009,10 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
   for (let i = 30; i < prices.length; i += 1) {
     const price = prices[i];
     if (price.date < startDate) continue;
+    if (endDate && price.date > endDate) break;
     if (startTime == null) startTime = new Date(`${price.date}T00:00:00Z`).getTime();
 
-    for (const portfolio of Object.values(portfolios)) accrueCash(portfolio, price.date);
+    for (const portfolio of Object.values(portfolios)) accrueCash(portfolio, price);
 
     const month = price.date.slice(0, 7);
     if (month !== lastMonth) {
@@ -775,7 +1039,7 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
       applySignalAction(portfolios.signal, decision, price, monthlyAmount);
       signalMemory = memoryAfterAction(signalMemory, decision);
       monthAction = decision.key;
-      actionCounts[decision.key] += 1;
+      actionStats[decision.key].count += 1;
     }
 
     for (const portfolio of Object.values(portfolios)) {
@@ -785,29 +1049,36 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
   }
 
   recordMonth();
-  return { finalPrices: previousPrice || prices.at(-1), portfolios, actionCounts };
+  const actionCounts = actionCountsFromStats(actionStats);
+  return { finalPrices: previousPrice || prices.at(-1), portfolios, actionCounts, actionStats };
 }
 
 async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
   const startDate = normalizeStart(start);
   const monthlyAmount = normalizeMonthly(monthly);
   const data = await loadData();
-  const prices = buildPrices(data.nasdaq);
+  const prices = buildPrices(data.nasdaq, data.qqq, data.tqqq, data.rates);
+  data.prices = prices;
   const capeChrono = [...data.capeLatestFirst].reverse();
   const states = buildStates(prices, data.nasdaq, data.vix, capeChrono);
-  const { finalPrices, portfolios, actionCounts } = runBacktest(data, startDate, monthlyAmount, DEFAULT_THRESHOLDS, states);
+  const { finalPrices, portfolios, actionStats } = runBacktest(data, startDate, monthlyAmount, DEFAULT_THRESHOLDS, states);
+  const strategies = summarizePortfolios(portfolios, finalPrices, actionStats);
   return {
+    generatedAt: new Date().toISOString(),
     start: startDate,
     monthly: monthlyAmount,
     staleSources: data.staleSources,
     end: finalPrices.date,
+    dataQuality: buildDataQuality(data, prices),
     modelNotes: {
       cape: `CAPE percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window.`,
       drawdown: `Drawdown uses a rolling ${ROLLING_HIGH_DAYS / 252}-year high of 5-day Nasdaq-100 averages.`,
-      costs: "QQQ adds a 0.7% annual dividend proxy; synthetic TQQQ deducts 0.95% expense ratio plus approximate 2x financing cost; cash earns approximate short-rate interest.",
+      costs: "QQQ/TQQQ use adjusted ETF closes when available; older pre-inception sections are synthetic. Synthetic QQQ adds a 0.7% dividend proxy. Synthetic TQQQ deducts 0.95% expense ratio plus approximate 2x financing cost. Cash earns FEDFUNDS when available, otherwise a coarse historical short-rate approximation.",
     },
-    strategies: summarizePortfolios(portfolios, finalPrices, actionCounts),
+    strategies,
     sensitivity: sensitivityGrid(data, startDate, monthlyAmount, states),
+    events: eventRecaps(strategies),
+    walkForward: walkForward(data, startDate, monthlyAmount, states),
   };
 }
 
@@ -818,6 +1089,7 @@ module.exports = {
   loadData,
   marketSnapshot,
   parseCapeTable,
+  fetchFredSeries,
   fetchYahooSeries,
   sendJson,
 };

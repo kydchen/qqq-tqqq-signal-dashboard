@@ -17,6 +17,7 @@ const actionVisuals = {
   pauseAtHigh: { icon: "$", color: "#475467" },
   normalDca: { icon: "Q", color: "#1d4ed8" },
 };
+const workbenchViews = ["positions", "events", "attribution", "validation", "data"];
 
 const copy = {
   zh: {
@@ -59,7 +60,59 @@ const copy = {
     scaleLabel: "对数纵轴",
     qqqAxisLabel: "右轴显示 QQQ 价格",
     actionMarkersLabel: "浮窗显示月度动作",
-    backtestNote: "回测固定为每月投入 $1,000。Nasdaq-100 指数代理 QQQ，并加入 0.7% 年化股息近似；TQQQ 用 3x 日收益再平衡合成，扣 0.95% 年费与约 2 倍短端融资成本；现金按近似短端利率计息。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。三信号策略包含现金仓、小底 QQQ 加仓、大底分批 TQQQ 进攻、大底后 6 个月把 TQQQ 提到约 90%、高位 TQQQ 锁利卖出，并保留 20% TQQQ 地板仓。",
+    backtestNote: "回测固定为每月投入 $1,000。QQQ/TQQQ 有真实 adjusted close 时使用真实 ETF 数据；早于 TQQQ 成立的区间才用 Nasdaq-100 日收益合成。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。三信号策略包含现金仓、小底 QQQ 加仓、大底分批 TQQQ 进攻、大底后 6 个月把 TQQQ 提到约 90%、高位 TQQQ 锁利卖出，并保留 20% TQQQ 地板仓。",
+    workbenchTitle: "策略工作台",
+    exportCsv: "导出 CSV",
+    copyLink: "复制链接",
+    linkCopied: "已复制",
+    tabs: {
+      positions: "仓位",
+      events: "事件复盘",
+      attribution: "动作归因",
+      validation: "稳健性",
+      data: "数据质量",
+    },
+    workbench: {
+      latestWeights: "最新仓位",
+      weightsChart: "三信号策略仓位变化",
+      cash: "现金",
+      qqq: "QQQ",
+      tqqq: "TQQQ",
+      latestAction: "最近动作",
+      syntheticTqqq: "TQQQ 早期为合成数据",
+      eventsTitle: "典型市场阶段表现",
+      period: "区间",
+      signalReturn: "三信号",
+      qqqReturn: "QQQ",
+      drawdown: "净值回撤",
+      topActions: "主要动作",
+      attributionTitle: "动作月度贡献估算",
+      months: "月份",
+      estimatedPnl: "估算贡献",
+      validationTitle: "Walk-forward 参数验证",
+      noValidation: "这个起始年份之后样本太短，暂无可用验证切分。",
+      split: "切分点",
+      bestThresholds: "训练期最佳阈值",
+      trained: "训练期",
+      validation: "验证期",
+      defaultRule: "默认规则",
+      dataTitle: "数据覆盖与模型口径",
+      coverage: "覆盖",
+      observations: "条",
+      stale: "当前使用快照兜底",
+      fresh: "实时/快照数据可用",
+      modelNotes: "模型说明",
+      actualStart: "真实数据起点",
+      syntheticEnd: "合成数据截至",
+    },
+    events: {
+      dotcom: "互联网泡沫",
+      gfc: "全球金融危机",
+      covid: "2020 疫情冲击",
+      rate2022: "2022 加息杀估值",
+      ai2023: "AI 牛市",
+      tariff2025: "2025 关税冲击",
+    },
     sources: "数据源：",
     error: "数据加载失败：",
     errorTitle: "数据暂时不可用",
@@ -167,7 +220,59 @@ const copy = {
     scaleLabel: "Log y-axis",
     qqqAxisLabel: "Show QQQ price axis",
     actionMarkersLabel: "Show actions in tooltip",
-    backtestNote: "Backtest uses a fixed $1,000 monthly contribution. Nasdaq-100 is used as a QQQ proxy with a 0.7% annual dividend approximation. TQQQ is synthesized from 3x daily returns after a 0.95% expense-ratio drag and approximate 2x short-rate financing cost. Cash earns approximate short-rate interest. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings.",
+    backtestNote: "Backtest uses a fixed $1,000 monthly contribution. QQQ/TQQQ use adjusted ETF closes when available; pre-TQQQ-inception ranges are synthetic from Nasdaq-100 daily returns. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings.",
+    workbenchTitle: "Strategy workbench",
+    exportCsv: "Export CSV",
+    copyLink: "Copy link",
+    linkCopied: "Copied",
+    tabs: {
+      positions: "Positions",
+      events: "Events",
+      attribution: "Attribution",
+      validation: "Validation",
+      data: "Data quality",
+    },
+    workbench: {
+      latestWeights: "Latest weights",
+      weightsChart: "Three-signal position history",
+      cash: "Cash",
+      qqq: "QQQ",
+      tqqq: "TQQQ",
+      latestAction: "Latest action",
+      syntheticTqqq: "Early TQQQ range is synthetic",
+      eventsTitle: "Key market regimes",
+      period: "Period",
+      signalReturn: "Three-signal",
+      qqqReturn: "QQQ",
+      drawdown: "NAV drawdown",
+      topActions: "Main actions",
+      attributionTitle: "Estimated monthly action contribution",
+      months: "Months",
+      estimatedPnl: "Estimated PnL",
+      validationTitle: "Walk-forward parameter validation",
+      noValidation: "This start year leaves too little forward sample for validation splits.",
+      split: "Split",
+      bestThresholds: "Best train thresholds",
+      trained: "Train",
+      validation: "Validation",
+      defaultRule: "Default rule",
+      dataTitle: "Coverage and model assumptions",
+      coverage: "Coverage",
+      observations: "obs",
+      stale: "Using snapshot fallback",
+      fresh: "Live/snapshot data available",
+      modelNotes: "Model notes",
+      actualStart: "Actual data starts",
+      syntheticEnd: "Synthetic through",
+    },
+    events: {
+      dotcom: "Dot-com bust",
+      gfc: "Global financial crisis",
+      covid: "2020 Covid shock",
+      rate2022: "2022 rate reset",
+      ai2023: "AI bull market",
+      tariff2025: "2025 tariff shock",
+    },
     sources: "Sources: ",
     error: "Data load failed: ",
     errorTitle: "Data unavailable",
@@ -250,6 +355,7 @@ function setLang(nextLang) {
   try {
     localStorage.setItem("lang", nextLang);
   } catch {}
+  updateShareUrl();
   renderStatic();
 }
 
@@ -261,6 +367,7 @@ let showActionMarkers = false;
 let errorMessage = "";
 let backtestRequestId = 0;
 let resizeFrame = 0;
+let workbenchView = "positions";
 
 function fmtPct(n, digits = 1) {
   return `${Number(n).toFixed(digits)}%`;
@@ -270,11 +377,21 @@ function fmtMoney(n) {
   return `$${Math.round(n).toLocaleString("en-US")}`;
 }
 
+function fmtSignedMoney(n) {
+  const sign = n < 0 ? "-" : n > 0 ? "+" : "";
+  return `${sign}$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
+}
+
 function fmtCompactMoney(n) {
   const value = Math.abs(n);
   if (value >= 1000000) return `$${(n / 1000000).toFixed(value >= 10000000 ? 1 : 2)}M`;
   if (value >= 1000) return `$${(n / 1000).toFixed(value >= 10000 ? 0 : 1)}K`;
   return fmtMoney(n);
+}
+
+function fmtSignedPct(n, digits = 1) {
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${fmtPct(n, digits)}`;
 }
 
 function fmtNumber(n, digits = 1) {
@@ -322,6 +439,48 @@ function showError(message) {
 function clearError() {
   errorMessage = "";
   renderError();
+}
+
+function isCheckedParam(params, key, fallback) {
+  const value = params.get(key);
+  if (value == null) return fallback;
+  return value === "1" || value === "true";
+}
+
+function optionExists(select, value) {
+  return [...select.options].some((option) => option.value === value);
+}
+
+function applyUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  const urlLang = params.get("lang");
+  if (urlLang === "zh" || urlLang === "en") lang = urlLang;
+  const start = params.get("start");
+  if (start && optionExists($("startInput"), start)) $("startInput").value = start;
+  const strategyParam = params.get("strategies");
+  if (strategyParam) {
+    const next = strategyParam.split(",").filter((key) => colors[key]);
+    if (next.length) selected = new Set(next);
+  }
+  $("trendInput").checked = isCheckedParam(params, "trend", $("trendInput").checked);
+  $("scaleInput").checked = isCheckedParam(params, "log", $("scaleInput").checked);
+  $("qqqAxisInput").checked = isCheckedParam(params, "qqqAxis", $("qqqAxisInput").checked);
+  showActionMarkers = isCheckedParam(params, "actions", showActionMarkers);
+  const view = params.get("view");
+  if (workbenchViews.includes(view)) workbenchView = view;
+}
+
+function updateShareUrl() {
+  const params = new URLSearchParams();
+  params.set("start", $("startInput").value);
+  params.set("lang", lang);
+  params.set("strategies", [...selected].join(","));
+  if ($("trendInput").checked) params.set("trend", "1");
+  if ($("scaleInput").checked) params.set("log", "1");
+  if ($("qqqAxisInput").checked) params.set("qqqAxis", "1");
+  if (showActionMarkers) params.set("actions", "1");
+  if (workbenchView !== "positions") params.set("view", workbenchView);
+  window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
 }
 
 function setChartState(message = "") {
@@ -489,7 +648,7 @@ function renderMarket() {
   $("operation").textContent = text[1];
   $("risk").textContent = text[2];
   $("meta").textContent = t.meta(marketData);
-  $("sources").innerHTML = `${t.sources}<a href="https://finance.yahoo.com/quote/%5ENDX/">Yahoo ^NDX</a>, <a href="https://finance.yahoo.com/quote/%5EVIX/">Yahoo ^VIX</a>, <a href="https://www.multpl.com/shiller-pe/table/by-month">Multpl Shiller PE</a>.`;
+  $("sources").innerHTML = `${t.sources}<a href="https://finance.yahoo.com/quote/%5ENDX/">Yahoo ^NDX</a>, <a href="https://finance.yahoo.com/quote/QQQ/">Yahoo QQQ</a>, <a href="https://finance.yahoo.com/quote/TQQQ/">Yahoo TQQQ</a>, <a href="https://finance.yahoo.com/quote/%5EVIX/">Yahoo ^VIX</a>, <a href="https://fred.stlouisfed.org/series/FEDFUNDS">FRED FEDFUNDS</a>, <a href="https://www.multpl.com/shiller-pe/table/by-month">Multpl Shiller PE</a>.`;
 
   $("chips").replaceChildren(
     chip(t.chips.valuationCheap, decision.lowSignals.valuationCheap),
@@ -515,6 +674,7 @@ function renderStrategyToggles() {
       const key = event.currentTarget.dataset.key;
       if (event.currentTarget.checked) selected.add(key);
       else selected.delete(key);
+      updateShareUrl();
       renderBacktest();
     });
   });
@@ -523,6 +683,7 @@ function renderStrategyToggles() {
 function renderBacktest() {
   if (!backtestData) return;
   renderChart();
+  renderWorkbench();
   const t = copy[lang];
   const cards = backtestData.strategies.map((strategy) => {
     const card = document.createElement("article");
@@ -545,6 +706,330 @@ function renderBacktest() {
   });
   $("metrics").replaceChildren(...cards);
   renderSensitivity();
+}
+
+function currentSignalStrategy() {
+  return backtestData?.strategies.find((strategy) => strategy.key === "signal");
+}
+
+function percentWidth(value) {
+  return `${Math.max(0, Math.min(100, value * 100)).toFixed(1)}%`;
+}
+
+function renderWorkbench() {
+  const el = $("workbench");
+  if (!backtestData) {
+    el.replaceChildren();
+    return;
+  }
+  const t = copy[lang];
+  const active = workbenchViews.includes(workbenchView) ? workbenchView : "positions";
+  const tabs = workbenchViews.map((key) => `<button type="button" class="workbench-tab${active === key ? " active" : ""}" data-view="${key}">${t.tabs[key]}</button>`).join("");
+  const panels = {
+    positions: renderPositionsView(),
+    events: renderEventsView(),
+    attribution: renderAttributionView(),
+    validation: renderValidationView(),
+    data: renderDataView(),
+  };
+  el.innerHTML = `
+    <div class="workbench-head">
+      <div>
+        <p class="eyebrow">${t.workbenchTitle}</p>
+        <div class="workbench-tabs">${tabs}</div>
+      </div>
+      <div class="workbench-actions">
+        <button id="copyLinkBtn" type="button" class="ghost">${t.copyLink}</button>
+        <button id="exportCsvBtn" type="button">${t.exportCsv}</button>
+      </div>
+    </div>
+    <div class="workbench-body">${panels[active]}</div>
+  `;
+  el.querySelectorAll(".workbench-tab").forEach((button) => {
+    button.addEventListener("click", () => {
+      workbenchView = button.dataset.view;
+      updateShareUrl();
+      renderWorkbench();
+    });
+  });
+  $("exportCsvBtn").addEventListener("click", exportCsv);
+  $("copyLinkBtn").addEventListener("click", copyShareLink);
+  if (active === "positions") drawWeightChart();
+}
+
+function renderPositionsView() {
+  const t = copy[lang];
+  const signal = currentSignalStrategy();
+  const latest = signal?.points.at(-1);
+  if (!latest) return "";
+  const actionKey = latest.actionKey || "normalDca";
+  const action = t.actions[actionKey];
+  const weights = [
+    { key: "cash", label: t.workbench.cash, value: latest.cashWeight, color: "#475467" },
+    { key: "qqq", label: t.workbench.qqq, value: latest.qqqWeight, color: colors.qqq },
+    { key: "tqqq", label: t.workbench.tqqq, value: latest.tqqqWeight, color: colors.tqqq },
+  ];
+  const weightCards = weights.map((item) => `
+    <div class="weight-card">
+      <span>${item.label}</span>
+      <strong>${fmtPct(item.value * 100)}</strong>
+      <div class="weight-track"><i style="width:${percentWidth(item.value)};background:${item.color}"></i></div>
+    </div>
+  `).join("");
+  const synthetic = signal.points.some((point) => point.tqqqSource === "synthetic")
+    ? `<span class="data-badge">${t.workbench.syntheticTqqq}</span>`
+    : "";
+  return `
+    <div class="positions-grid">
+      <div>
+        <h3>${t.workbench.latestWeights}</h3>
+        <div class="weights-grid">${weightCards}</div>
+        <div class="latest-action">
+          <span class="action-icon" style="background:${actionVisuals[actionKey].color}">${actionVisuals[actionKey].icon}</span>
+          <div><strong>${t.workbench.latestAction}: ${action.title}</strong><p>${action.operation}</p></div>
+        </div>
+        ${synthetic}
+      </div>
+      <div class="weight-chart-panel">
+        <div class="chart-panel-head">
+          <h3>${t.workbench.weightsChart}</h3>
+          <div class="mini-legend">
+            <span><i style="background:#475467"></i>${t.workbench.cash}</span>
+            <span><i style="background:${colors.qqq}"></i>${t.workbench.qqq}</span>
+            <span><i style="background:${colors.tqqq}"></i>${t.workbench.tqqq}</span>
+          </div>
+        </div>
+        <canvas id="weightChart" height="220"></canvas>
+      </div>
+    </div>
+  `;
+}
+
+function drawWeightChart() {
+  const canvas = $("weightChart");
+  const signal = currentSignalStrategy();
+  if (!canvas || !signal?.points.length) return;
+  const wrap = canvas.parentElement;
+  const rect = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+  canvas.height = Math.max(220, Math.floor(220 * dpr));
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const width = canvas.width / dpr;
+  const height = canvas.height / dpr;
+  const pad = { left: 42, right: 14, top: 14, bottom: 28 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const points = signal.points;
+  const xFor = (i) => pad.left + (points.length <= 1 ? 0 : i / (points.length - 1)) * plotW;
+  const yFor = (value) => pad.top + (1 - Math.max(0, Math.min(1, value))) * plotH;
+  ctx.clearRect(0, 0, width, height);
+  ctx.strokeStyle = "#d4dbe5";
+  ctx.lineWidth = 1;
+  ctx.fillStyle = "#667085";
+  ctx.font = "11px ui-sans-serif, system-ui";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  [0, 0.5, 1].forEach((value) => {
+    const y = yFor(value);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+    ctx.fillText(fmtPct(value * 100, 0), pad.left - 8, y);
+  });
+  [
+    ["cashWeight", "#475467"],
+    ["qqqWeight", colors.qqq],
+    ["tqqqWeight", colors.tqqq],
+  ].forEach(([key, color]) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    points.forEach((point, i) => {
+      const x = xFor(i);
+      const y = yFor(point[key]);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+  ctx.fillStyle = "#667085";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  [0, Math.floor((points.length - 1) / 2), points.length - 1].forEach((i) => {
+    ctx.fillText(points[i].date.slice(0, 4), xFor(i), height - pad.bottom + 10);
+  });
+}
+
+function renderEventsView() {
+  const t = copy[lang];
+  const events = backtestData.events || [];
+  if (!events.length) return `<p class="muted">${t.workbench.noValidation}</p>`;
+  return `
+    <h3>${t.workbench.eventsTitle}</h3>
+    <div class="event-grid">
+      ${events.map((event) => {
+        const signal = event.strategies.find((strategy) => strategy.key === "signal");
+        const qqq = event.strategies.find((strategy) => strategy.key === "qqq");
+        const topActions = Object.entries(signal?.actionCounts || {})
+          .filter(([, count]) => count > 0)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3);
+        return `
+          <article class="event-card">
+            <div class="event-head"><strong>${t.events[event.key] || event.key}</strong><span>${event.start.slice(0, 7)} - ${event.end.slice(0, 7)}</span></div>
+            <div class="event-stats">
+              <div><span>${t.workbench.signalReturn}</span><strong>${signal ? fmtSignedPct(signal.returnPct * 100) : "--"}</strong></div>
+              <div><span>${t.workbench.qqqReturn}</span><strong>${qqq ? fmtSignedPct(qqq.returnPct * 100) : "--"}</strong></div>
+              <div><span>${t.workbench.drawdown}</span><strong>${signal ? fmtPct(signal.maxDrawdown * 100) : "--"}</strong></div>
+            </div>
+            <div class="event-actions">
+              <span>${t.workbench.topActions}</span>
+              <div>${topActions.length ? topActions.map(([key, count]) => `<i style="background:${actionVisuals[key].color}">${actionVisuals[key].icon}</i>${count}`).join(" ") : "--"}</div>
+            </div>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderAttributionView() {
+  const t = copy[lang];
+  const signal = currentSignalStrategy();
+  const stats = signal?.actionStats || {};
+  const maxAbs = Math.max(1, ...actionOrder.map((key) => Math.abs(stats[key]?.estimatedPnL || 0)));
+  return `
+    <h3>${t.workbench.attributionTitle}</h3>
+    <div class="attribution-list">
+      ${actionOrder.map((key) => {
+        const stat = stats[key] || { count: 0, estimatedPnL: 0 };
+        const action = t.actions[key];
+        const pnl = stat.estimatedPnL || 0;
+        return `
+          <div class="attribution-row">
+            <span class="action-icon" style="background:${actionVisuals[key].color}">${actionVisuals[key].icon}</span>
+            <div class="attribution-main">
+              <div><strong>${action.title}</strong><span>${stat.count} ${t.workbench.months}</span><span>${fmtSignedMoney(pnl)}</span></div>
+              <div class="pnl-track"><i class="${pnl < 0 ? "negative" : ""}" style="width:${Math.max(2, Math.abs(pnl) / maxAbs * 100).toFixed(1)}%;background:${pnl < 0 ? "#b42318" : actionVisuals[key].color}"></i></div>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderValidationView() {
+  const t = copy[lang];
+  const rows = backtestData.walkForward || [];
+  if (!rows.length) return `<h3>${t.workbench.validationTitle}</h3><p class="muted">${t.workbench.noValidation}</p>`;
+  return `
+    <h3>${t.workbench.validationTitle}</h3>
+    <div class="table-scroll">
+      <table class="plain-table">
+        <thead>
+          <tr><th>${t.workbench.split}</th><th>${t.workbench.bestThresholds}</th><th>${t.workbench.trained}</th><th>${t.workbench.validation}</th><th>${t.workbench.defaultRule}</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${row.split.slice(0, 4)}</td>
+              <td>DD ${fmtPct(row.bestThresholds.deepDrawdown, 0)} / VIX ${fmtNumber(row.bestThresholds.panicVix, 0)}</td>
+              <td>${fmtMoney(row.trainFinalValue)}</td>
+              <td>${fmtMoney(row.validationFinalValue)}</td>
+              <td>${fmtMoney(row.defaultValidationFinalValue)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderDataView() {
+  const t = copy[lang];
+  const q = backtestData.dataQuality || {};
+  const series = ["nasdaq", "qqq", "tqqq", "vix", "rates", "cape"];
+  const stale = backtestData.staleSources || [];
+  return `
+    <h3>${t.workbench.dataTitle}</h3>
+    <div class="data-quality-grid">
+      ${series.map((key) => {
+        const item = q[key] || {};
+        return `
+          <div class="data-quality-item">
+            <strong>${key.toUpperCase()}</strong>
+            <span>${item.start || "--"} - ${item.end || "--"}</span>
+            <small>${item.count || 0} ${t.workbench.observations}</small>
+          </div>
+        `;
+      }).join("")}
+    </div>
+    <div class="data-note-grid">
+      <div><span>${t.workbench.actualStart}</span><strong>QQQ ${q.qqqActualStart || "--"} / TQQQ ${q.tqqqActualStart || "--"}</strong></div>
+      <div><span>${t.workbench.syntheticEnd}</span><strong>TQQQ ${q.tqqqSyntheticEnd || "--"}</strong></div>
+      <div><span>${stale.length ? t.workbench.stale : t.workbench.fresh}</span><strong>${stale.length ? stale.join(", ") : "OK"}</strong></div>
+    </div>
+    <h4>${t.workbench.modelNotes}</h4>
+    <ul class="model-notes">
+      ${Object.values(backtestData.modelNotes || {}).map((note) => `<li>${escapeHtml(note)}</li>`).join("")}
+    </ul>
+  `;
+}
+
+function csvCell(value) {
+  const text = value == null ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function exportCsv() {
+  if (!backtestData) return;
+  const headers = ["date", "strategy", "value", "nav", "cash", "qqq_value", "tqqq_value", "cash_weight", "qqq_weight", "tqqq_weight", "action_key", "qqq_price", "tqqq_source"];
+  const rows = [headers];
+  for (const strategy of backtestData.strategies) {
+    for (const point of strategy.points) {
+      rows.push([
+        point.date,
+        strategy.key,
+        Math.round(point.value * 100) / 100,
+        point.nav,
+        point.cash,
+        point.qqqValue,
+        point.tqqqValue,
+        point.cashWeight,
+        point.qqqWeight,
+        point.tqqqWeight,
+        point.actionKey || "",
+        point.qqqPrice || "",
+        point.tqqqSource || "",
+      ]);
+    }
+  }
+  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `qqq-tqqq-backtest-${backtestData.start.slice(0, 4)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function copyShareLink() {
+  updateShareUrl();
+  const button = $("copyLinkBtn");
+  try {
+    await navigator.clipboard.writeText(window.location.href);
+    button.textContent = copy[lang].linkCopied;
+    setTimeout(() => { if (button.isConnected) button.textContent = copy[lang].copyLink; }, 1200);
+  } catch {
+    window.prompt(copy[lang].copyLink, window.location.href);
+  }
 }
 
 function renderSensitivity() {
@@ -834,12 +1319,25 @@ async function loadAll() {
 
 $("zhBtn").addEventListener("click", () => { setLang("zh"); });
 $("enBtn").addEventListener("click", () => { setLang("en"); });
-$("startInput").addEventListener("change", loadBacktest);
-$("trendInput").addEventListener("change", renderBacktest);
-$("scaleInput").addEventListener("change", renderBacktest);
-$("qqqAxisInput").addEventListener("change", renderBacktest);
+$("startInput").addEventListener("change", () => {
+  updateShareUrl();
+  loadBacktest();
+});
+$("trendInput").addEventListener("change", () => {
+  updateShareUrl();
+  renderBacktest();
+});
+$("scaleInput").addEventListener("change", () => {
+  updateShareUrl();
+  renderBacktest();
+});
+$("qqqAxisInput").addEventListener("change", () => {
+  updateShareUrl();
+  renderBacktest();
+});
 $("actionsInput").addEventListener("change", (event) => {
   showActionMarkers = event.currentTarget.checked;
+  updateShareUrl();
   renderBacktest();
 });
 window.addEventListener("resize", () => {
@@ -847,8 +1345,10 @@ window.addEventListener("resize", () => {
   resizeFrame = requestAnimationFrame(() => {
     resizeFrame = 0;
     renderChart();
+    drawWeightChart();
   });
 });
 
+applyUrlParams();
 renderStatic();
 loadAll();

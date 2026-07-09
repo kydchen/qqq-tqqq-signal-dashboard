@@ -6,8 +6,17 @@ Bilingual QQQ/TQQQ dashboard for three signals, evaluated daily with monthly con
 - Nasdaq-100 rolling 5-year drawdown and fast-crash check
 - VIX 5-day average
 
-It also includes an interactive DCA backtest comparing QQQ DCA, TQQQ DCA, new-cash 80/20 QQQ/TQQQ DCA, and a three-signal QQQ/TQQQ timing rule. Backtests use a fixed $1,000 monthly contribution.
+It also includes an interactive DCA workbench comparing QQQ DCA, TQQQ DCA, new-cash 80/20 QQQ/TQQQ DCA, and a three-signal QQQ/TQQQ timing rule. Backtests use a fixed $1,000 monthly contribution.
 The chart can optionally overlay actual QQQ closing prices on a right-side y-axis.
+
+The workbench adds:
+
+- Position weights for the signal strategy: cash, QQQ, and TQQQ.
+- Event recaps for major regimes such as dot-com, 2008, 2020, 2022, and 2025.
+- Action attribution by rule type.
+- Walk-forward threshold validation.
+- Data-quality coverage showing real ETF history versus synthetic pre-inception ranges.
+- CSV export and shareable URLs.
 
 ## Signal Rule
 
@@ -62,9 +71,11 @@ Import the repository into Vercel. The static page is `index.html`; serverless A
 ## Data
 
 - Nasdaq-100: Yahoo Finance `^NDX`
-- QQQ: Yahoo Finance `QQQ`
+- QQQ adjusted close: Yahoo Finance `QQQ`
+- TQQQ adjusted close: Yahoo Finance `TQQQ`
 - VIX: Yahoo Finance `^VIX`
+- Short rate: FRED `FEDFUNDS`
 - CAPE/Shiller PE: Multpl monthly table
 - Static fallback snapshots live in `data/` and are refreshed by the monthly GitHub Action.
 
-Backtests use Nasdaq-100 as a QQQ proxy with a 0.7% annual dividend approximation. TQQQ is synthesized from 3x daily Nasdaq-100 returns after a 0.95% annual expense-ratio drag and approximate 2x short-rate financing cost. Cash earns approximate short-rate interest. The 80/20 variant allocates each new monthly contribution 80% to QQQ and 20% to TQQQ, without rebalancing existing holdings. Backtests still exclude tax, slippage, borrowing limits, tracking error, and live broker execution constraints.
+Backtests use adjusted QQQ/TQQQ closes when available. Before QQQ/TQQQ live history exists, QQQ is proxied from Nasdaq-100 with a 0.7% annual dividend approximation and TQQQ is synthesized from 3x daily Nasdaq-100 returns after a 0.95% annual expense-ratio drag and approximate 2x financing cost. Cash earns FRED FEDFUNDS when available, with a coarse historical fallback. The 80/20 variant allocates each new monthly contribution 80% to QQQ and 20% to TQQQ, without rebalancing existing holdings. Backtests still exclude tax, slippage, borrowing limits, tracking error, and live broker execution constraints.

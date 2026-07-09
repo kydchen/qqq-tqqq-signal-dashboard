@@ -14,18 +14,28 @@ async function main() {
   assert.equal(cape.length, 1);
   assert.equal(cape[0].value, 33.3);
 
-  if (process.env.LIVE === "1") {
-    const market = await marketSnapshot();
-    assert(market.indicators.cape.percentile > 0);
-    assert(market.indicators.nasdaq100.level5dAvg > 0);
-    const result = await backtest({ start: "2020-01" });
-    assert.equal(result.strategies.length, 4);
-    assert(result.sensitivity.points.length === 9);
-    for (const strategy of result.strategies) {
-      assert(strategy.finalValue > 0);
-      assert(strategy.points.length > 12);
-    }
-  }
+	  if (process.env.LIVE === "1") {
+	    const market = await marketSnapshot();
+	    assert(market.indicators.cape.percentile > 0);
+	    assert(market.indicators.nasdaq100.level5dAvg > 0);
+	    assert(market.dataQuality.qqq.count > 1000);
+	    assert(market.dataQuality.tqqq.count > 1000);
+	    const result = await backtest({ start: "2020-01" });
+	    assert.equal(result.strategies.length, 4);
+	    assert(result.sensitivity.points.length === 9);
+	    assert(result.events.length >= 2);
+	    assert(result.walkForward.length >= 1);
+	    assert(result.dataQuality.qqqActualStart);
+	    assert(result.dataQuality.tqqqActualStart);
+	    for (const strategy of result.strategies) {
+	      assert(strategy.finalValue > 0);
+	      assert(strategy.points.length > 12);
+	      assert("cashWeight" in strategy.points.at(-1));
+	      assert("qqqPrice" in strategy.points.at(-1));
+	    }
+	    const signal = result.strategies.find((strategy) => strategy.key === "signal");
+	    assert(signal.actionStats.normalDca.count >= 0);
+	  }
 
   console.log("check ok");
 }
