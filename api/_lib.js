@@ -22,6 +22,7 @@ const DEFAULT_THRESHOLDS = {
 
 const sourceCache = {
   nasdaq: null,
+  qqq: null,
   vix: null,
   capeLatestFirst: null,
 };
@@ -144,6 +145,16 @@ async function loadData() {
         throw error;
       }
     }),
+    cachedSource("qqq", async () => {
+      try {
+        return await fetchYahooSeries("QQQ", "QQQ");
+      } catch (error) {
+        const snapshot = loadJsonSnapshot("qqq-snapshot.json");
+        snapshot.fromSnapshot = true;
+        if (snapshot.length) return snapshot;
+        throw error;
+      }
+    }),
     cachedSource("vix", async () => {
       try {
         return await fetchYahooSeries("^VIX", "VIX");
@@ -167,13 +178,15 @@ async function loadData() {
   ]);
   const failed = sources.find((source) => source.status === "rejected");
   if (failed) throw failed.reason;
-  const [nasdaq, vix, cape] = sources.map((source) => source.value);
+  const [nasdaq, qqq, vix, cape] = sources.map((source) => source.value);
   return {
     nasdaq: nasdaq.data,
+    qqq: qqq.data,
     vix: vix.data,
     capeLatestFirst: cape.data,
     staleSources: [
       nasdaq.stale ? "Nasdaq-100" : null,
+      qqq.stale ? "QQQ" : null,
       vix.stale ? "VIX" : null,
       cape.stale ? "CAPE" : null,
     ].filter(Boolean),
@@ -195,6 +208,7 @@ function loadJsonSnapshot(file) {
   try {
     const loaders = {
       "ndx-snapshot.json": () => require("../data/ndx-snapshot.json"),
+      "qqq-snapshot.json": () => require("../data/qqq-snapshot.json"),
       "vix-snapshot.json": () => require("../data/vix-snapshot.json"),
     };
     jsonSnapshots[file] = loaders[file]?.() || [];
@@ -503,11 +517,12 @@ function buyTQQQToTarget(portfolio, targetPct, prices, rotationPct = 0, cashLimi
   buyTQQQ(portfolio, rotateValue, prices.tqqq);
 }
 
-function record(portfolio, prices, startTime, actionKey = null) {
+function record(portfolio, prices, startTime, actionKey = null, qqqPrice = null) {
   const value = valueOf(portfolio, prices);
   portfolio.points.push({
     date: prices.date,
     value,
+    qqqPrice,
     nav: unitNav(portfolio, prices),
     units: portfolio.units,
     year: (new Date(`${prices.date}T00:00:00Z`).getTime() - startTime) / (365.25 * 24 * 3600 * 1000),
@@ -700,7 +715,7 @@ function sensitivityGrid(data, startDate, monthlyAmount, states) {
 }
 
 function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESHOLDS, states = null) {
-  const { nasdaq, vix, capeLatestFirst } = data;
+  const { nasdaq, qqq, vix, capeLatestFirst } = data;
   const prices = buildPrices(nasdaq);
   if (startDate > prices.at(-1).date) throw new HttpError(400, "Start is after the latest available market date.");
   const capeChrono = [...capeLatestFirst].reverse();
@@ -718,11 +733,13 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
   let monthAction = null;
   let previousPrice = null;
   const actionCounts = Object.fromEntries(["bottomAttack", "rampTqqq", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"].map((key) => [key, 0]));
+  const qqqByDate = new Map((qqq || []).map((point) => [point.date, point.value]));
 
   const recordMonth = () => {
     if (!previousPrice || startTime == null) return;
+    const qqqPrice = qqqByDate.get(previousPrice.date) || null;
     for (const [key, portfolio] of Object.entries(portfolios)) {
-      record(portfolio, previousPrice, startTime, key === "signal" ? monthAction : null);
+      record(portfolio, previousPrice, startTime, key === "signal" ? monthAction : null, qqqPrice);
     }
   };
 

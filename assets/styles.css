@@ -407,7 +407,7 @@ h2 {
 
 .backtest-controls {
   display: grid;
-  grid-template-columns: 150px 180px repeat(3, minmax(150px, 1fr));
+  grid-template-columns: 150px 180px repeat(4, minmax(150px, 1fr));
   gap: 12px;
   align-items: end;
   margin: 0;

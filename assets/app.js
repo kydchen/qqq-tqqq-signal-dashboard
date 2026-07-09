@@ -57,6 +57,7 @@ const copy = {
     monthlyFixedLabel: "每月固定投入",
     trendLabel: "显示单位净值趋势线",
     scaleLabel: "对数纵轴",
+    qqqAxisLabel: "右轴显示 QQQ 价格",
     actionMarkersLabel: "浮窗显示月度动作",
     backtestNote: "回测固定为每月投入 $1,000。Nasdaq-100 指数代理 QQQ，并加入 0.7% 年化股息近似；TQQQ 用 3x 日收益再平衡合成，扣 0.95% 年费与约 2 倍短端融资成本；现金按近似短端利率计息。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。三信号策略包含现金仓、小底 QQQ 加仓、大底分批 TQQQ 进攻、大底后 6 个月把 TQQQ 提到约 90%、高位 TQQQ 锁利卖出，并保留 20% TQQQ 地板仓。",
     sources: "数据源：",
@@ -164,6 +165,7 @@ const copy = {
     monthlyFixedLabel: "Fixed monthly buy",
     trendLabel: "Show unit-NAV trend",
     scaleLabel: "Log y-axis",
+    qqqAxisLabel: "Show QQQ price axis",
     actionMarkersLabel: "Show actions in tooltip",
     backtestNote: "Backtest uses a fixed $1,000 monthly contribution. Nasdaq-100 is used as a QQQ proxy with a 0.7% annual dividend approximation. TQQQ is synthesized from 3x daily returns after a 0.95% expense-ratio drag and approximate 2x short-rate financing cost. Cash earns approximate short-rate interest. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings.",
     sources: "Sources: ",
@@ -394,6 +396,7 @@ function renderStatic() {
   $("monthlyFixedLabel").textContent = t.monthlyFixedLabel;
   $("trendLabel").textContent = t.trendLabel;
   $("scaleLabel").textContent = t.scaleLabel;
+  $("qqqAxisLabel").textContent = t.qqqAxisLabel;
   $("actionMarkersLabel").textContent = t.actionMarkersLabel;
   $("actionsInput").checked = showActionMarkers;
   $("backtestNote").textContent = t.backtestNote;
@@ -611,7 +614,8 @@ function renderChart() {
   ctx.scale(dpr, dpr);
   const width = canvas.width / dpr;
   const height = canvas.height / dpr;
-  const pad = { left: width < 620 ? 72 : 86, right: 24, top: 24, bottom: 42 };
+  const showQqqAxis = $("qqqAxisInput").checked;
+  const pad = { left: width < 620 ? 72 : 86, right: showQqqAxis ? 68 : 24, top: 24, bottom: 42 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   ctx.clearRect(0, 0, width, height);
@@ -629,6 +633,10 @@ function renderChart() {
   const logScale = $("scaleInput").checked;
   const bounds = chartBounds(strategies, logScale);
   const pointCount = strategies[0].points.length;
+  const qqqPrices = showQqqAxis ? strategies[0].points.map((point) => point.qqqPrice).filter((value) => Number.isFinite(value) && value > 0) : [];
+  const qqqBounds = qqqPrices.length
+    ? { min: Math.min(...qqqPrices) * 0.96, max: Math.max(...qqqPrices) * 1.04 }
+    : null;
   const xFor = (i) => pad.left + (pointCount <= 1 ? 0 : i / (pointCount - 1)) * plotW;
   const yFor = (value) => {
     if (!logScale) return pad.top + plotH - (value - bounds.min) / (bounds.max - bounds.min) * plotH;
@@ -656,6 +664,21 @@ function renderChart() {
       ? Math.exp(Math.log(bounds.max) - ((Math.log(bounds.max) - Math.log(bounds.min)) * i) / 4)
       : bounds.max - ((bounds.max - bounds.min) * i) / 4;
     ctx.fillText(fmtCompactMoney(value), pad.left - 10, pad.top + (plotH * i) / 4);
+  }
+
+  if (qqqBounds) {
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#8a94a6";
+    for (let i = 0; i <= 4; i += 1) {
+      const value = qqqBounds.max - ((qqqBounds.max - qqqBounds.min) * i) / 4;
+      ctx.fillText(`$${value.toFixed(0)}`, width - pad.right + 10, pad.top + (plotH * i) / 4);
+    }
+    ctx.save();
+    ctx.translate(width - 14, pad.top + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "center";
+    ctx.fillText("QQQ", 0, 0);
+    ctx.restore();
   }
 
   ctx.textAlign = "center";
@@ -698,6 +721,28 @@ function renderChart() {
     }
   }
 
+  if (qqqBounds) {
+    const yQqq = (value) => pad.top + plotH - (value - qqqBounds.min) / (qqqBounds.max - qqqBounds.min) * plotH;
+    ctx.strokeStyle = "#98a2b3";
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    let hasQqqPoint = false;
+    strategies[0].points.forEach((point, i) => {
+      if (!Number.isFinite(point.qqqPrice) || point.qqqPrice <= 0) return;
+      const x = xFor(i);
+      const y = yQqq(point.qqqPrice);
+      if (!hasQqqPoint) {
+        ctx.moveTo(x, y);
+        hasQqqPoint = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   const showTooltip = (event) => {
     const chartRect = canvas.getBoundingClientRect();
     const x = event.clientX - chartRect.left;
@@ -716,10 +761,13 @@ function renderChart() {
       const point = strategy.points[index];
       return `<div><span style="color:${colors[strategy.key]}">●</span> ${copy[lang].strategies[strategy.key]}: <strong>${fmtMoney(point.value)}</strong></div>`;
     }).join("");
+    const qqqRow = showQqqAxis && Number.isFinite(strategies[0].points[index].qqqPrice)
+      ? `<div><span style="color:#98a2b3">●</span> QQQ: <strong>${fmtMoney(strategies[0].points[index].qqqPrice)}</strong></div>`
+      : "";
     const tip = $("tooltip");
     const dateLabel = fmtDate(strategies[0].points[index].date);
-    tip.innerHTML = `<strong>${dateLabel}</strong>${actionRow}${rows}`;
-    $("chartReadout").innerHTML = `<strong>${dateLabel}</strong>${actionRow}${rows}`;
+    tip.innerHTML = `<strong>${dateLabel}</strong>${actionRow}${rows}${qqqRow}`;
+    $("chartReadout").innerHTML = `<strong>${dateLabel}</strong>${actionRow}${rows}${qqqRow}`;
     tip.hidden = false;
     const tipW = tip.offsetWidth || 280;
     const tipH = tip.offsetHeight || 80;
@@ -789,6 +837,7 @@ $("enBtn").addEventListener("click", () => { setLang("en"); });
 $("startInput").addEventListener("change", loadBacktest);
 $("trendInput").addEventListener("change", renderBacktest);
 $("scaleInput").addEventListener("change", renderBacktest);
+$("qqqAxisInput").addEventListener("change", renderBacktest);
 $("actionsInput").addEventListener("change", (event) => {
   showActionMarkers = event.currentTarget.checked;
   renderBacktest();

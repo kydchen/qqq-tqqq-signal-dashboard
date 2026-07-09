@@ -7,6 +7,7 @@ Bilingual QQQ/TQQQ dashboard for three signals, evaluated daily with monthly con
 - VIX 5-day average
 
 It also includes an interactive DCA backtest comparing QQQ DCA, TQQQ DCA, new-cash 80/20 QQQ/TQQQ DCA, and a three-signal QQQ/TQQQ timing rule. Backtests use a fixed $1,000 monthly contribution.
+The chart can optionally overlay actual QQQ closing prices on a right-side y-axis.
 
 ## Signal Rule
 
@@ -61,6 +62,7 @@ Import the repository into Vercel. The static page is `index.html`; serverless A
 ## Data
 
 - Nasdaq-100: Yahoo Finance `^NDX`
+- QQQ: Yahoo Finance `QQQ`
 - VIX: Yahoo Finance `^VIX`
 - CAPE/Shiller PE: Multpl monthly table
 - Static fallback snapshots live in `data/` and are refreshed by the monthly GitHub Action.
