@@ -600,10 +600,10 @@ canvas {
 
 .workbench-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 14px;
+  padding: 16px;
   border-bottom: 1px solid var(--line);
   background: #f8fafc;
 }
@@ -615,15 +615,15 @@ canvas {
 .workbench-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: 8px;
 }
 
 .workbench-tab {
-  min-height: 32px;
+  min-height: 40px;
   border-color: var(--line);
   background: #fff;
   color: var(--ink);
-  padding: 6px 10px;
+  padding: 8px 12px;
   font-size: 13px;
   font-weight: 720;
 }
@@ -640,8 +640,13 @@ canvas {
   flex: 0 0 auto;
 }
 
+.workbench-actions button {
+  min-height: 40px;
+  padding: 8px 13px;
+}
+
 .workbench-body {
-  padding: 14px;
+  padding: 16px;
 }
 
 .workbench-body h3 {
@@ -834,14 +839,20 @@ canvas {
 
 .attribution-list {
   display: grid;
-  gap: 8px;
+  gap: 0;
 }
 
 .attribution-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
+  padding: 8px 0 10px;
+  border-bottom: 1px solid #edf1f5;
+}
+
+.attribution-row:last-child {
+  border-bottom: 0;
 }
 
 .attribution-main {
@@ -850,7 +861,7 @@ canvas {
 
 .attribution-main > div:first-child {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 80px 110px;
+  grid-template-columns: minmax(120px, 1fr) 86px 126px;
   gap: 10px;
   align-items: center;
   font-size: 13px;
@@ -860,12 +871,70 @@ canvas {
   color: var(--muted);
 }
 
-.pnl-track {
-  height: 6px;
+.attribution-main span:last-child {
+  color: var(--ink);
+  font-weight: 740;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
-.pnl-track i.negative {
-  margin-left: auto;
+.attribution-scale {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  margin: -2px 0 3px 50px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.attribution-scale span:first-child {
+  text-align: right;
+}
+
+.attribution-scale span:last-child {
+  text-align: left;
+}
+
+.pnl-track {
+  position: relative;
+  height: 10px;
+  background: #e7edf5;
+  overflow: visible;
+}
+
+.pnl-track::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  width: 1px;
+  background: #98a2b3;
+}
+
+.pnl-track i {
+  position: absolute;
+  top: 2px;
+  height: 6px;
+  max-width: 50%;
+}
+
+.pnl-track i.gain {
+  left: 50%;
+  border-radius: 0 999px 999px 0;
+}
+
+.pnl-track i.loss {
+  right: 50%;
+  border-radius: 999px 0 0 999px;
+}
+
+.pnl-track i.flat {
+  left: 50%;
+  width: 0;
 }
 
 .table-scroll {
@@ -1061,47 +1130,51 @@ canvas {
   .compact {
     margin-top: 16px;
   }
-	  .market-grid,
-	  .method-grid,
-	  .action-grid,
-	  .metrics-grid,
-	  .positions-grid,
-	  .event-grid,
-	  .data-quality-grid,
-	  .data-note-grid,
-	  .sensitivity,
-	  .backtest-controls {
-	    grid-template-columns: 1fr;
-	  }
-	  .weights-grid,
-	  .event-stats {
-	    grid-template-columns: repeat(3, minmax(0, 1fr));
-	  }
-	  .workbench-head,
-	  .chart-panel-head {
-	    display: block;
-	  }
-	  .workbench-actions,
-	  .mini-legend {
-	    margin-top: 10px;
-	  }
-	  .attribution-main > div:first-child {
-	    grid-template-columns: 1fr;
-	    gap: 3px;
-	  }
-	  .chart-wrap {
-	    height: 360px;
-	  }
-	  .backtest-panel .section-head,
-	  .backtest-controls,
-	  .strategy-toggles,
-	  .chart-wrap,
-	  .chart-readout,
-	  .workbench,
-	  .metrics-grid,
-	  .sensitivity,
-	  .backtest-panel .small-note {
-	    margin-left: 14px;
+  .market-grid,
+  .method-grid,
+  .action-grid,
+  .metrics-grid,
+  .positions-grid,
+  .event-grid,
+  .data-quality-grid,
+  .data-note-grid,
+  .sensitivity,
+  .backtest-controls {
+    grid-template-columns: 1fr;
+  }
+  .weights-grid,
+  .event-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .workbench-head,
+  .chart-panel-head {
+    display: block;
+  }
+  .workbench-actions,
+  .mini-legend {
+    margin-top: 10px;
+  }
+  .workbench-tab,
+  .workbench-actions button {
+    min-height: 44px;
+  }
+  .attribution-main > div:first-child {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+  .chart-wrap {
+    height: 360px;
+  }
+  .backtest-panel .section-head,
+  .backtest-controls,
+  .strategy-toggles,
+  .chart-wrap,
+  .chart-readout,
+  .workbench,
+  .metrics-grid,
+  .sensitivity,
+  .backtest-panel .small-note {
+    margin-left: 14px;
     margin-right: 14px;
   }
   .backtest-panel .section-head,

@@ -87,6 +87,8 @@ const copy = {
       drawdown: "净值回撤",
       topActions: "主要动作",
       attributionTitle: "动作月度贡献估算",
+      drag: "拖累",
+      gain: "贡献",
       months: "月份",
       estimatedPnl: "估算贡献",
       validationTitle: "Walk-forward 参数验证",
@@ -247,6 +249,8 @@ const copy = {
       drawdown: "NAV drawdown",
       topActions: "Main actions",
       attributionTitle: "Estimated monthly action contribution",
+      drag: "Drag",
+      gain: "Gain",
       months: "Months",
       estimatedPnl: "Estimated PnL",
       validationTitle: "Walk-forward parameter validation",
@@ -903,17 +907,20 @@ function renderAttributionView() {
   const maxAbs = Math.max(1, ...actionOrder.map((key) => Math.abs(stats[key]?.estimatedPnL || 0)));
   return `
     <h3>${t.workbench.attributionTitle}</h3>
+    <div class="attribution-scale"><span>${t.workbench.drag}</span><span>0</span><span>${t.workbench.gain}</span></div>
     <div class="attribution-list">
       ${actionOrder.map((key) => {
         const stat = stats[key] || { count: 0, estimatedPnL: 0 };
         const action = t.actions[key];
         const pnl = stat.estimatedPnL || 0;
+        const side = pnl < 0 ? "loss" : pnl > 0 ? "gain" : "flat";
+        const width = pnl === 0 ? 0 : Math.max(2, Math.abs(pnl) / maxAbs * 50).toFixed(1);
         return `
           <div class="attribution-row">
             <span class="action-icon" style="background:${actionVisuals[key].color}">${actionVisuals[key].icon}</span>
             <div class="attribution-main">
               <div><strong>${action.title}</strong><span>${stat.count} ${t.workbench.months}</span><span>${fmtSignedMoney(pnl)}</span></div>
-              <div class="pnl-track"><i class="${pnl < 0 ? "negative" : ""}" style="width:${Math.max(2, Math.abs(pnl) / maxAbs * 100).toFixed(1)}%;background:${pnl < 0 ? "#b42318" : actionVisuals[key].color}"></i></div>
+              <div class="pnl-track"><i class="${side}" style="width:${width}%;background:${pnl < 0 ? "#b42318" : actionVisuals[key].color}"></i></div>
             </div>
           </div>
         `;
