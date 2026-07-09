@@ -808,7 +808,7 @@ function applySignalAction(portfolio, decision, prices, monthlyAmount) {
   } else if (decision.key === "crashDefense") {
     sellTQQQ(portfolio, 0.5, prices.tqqq);
   } else if (decision.key === "rampTqqq") {
-    const cashLimit = monthlyAmount + Math.max(0, portfolio.cash - monthlyAmount) / 6;
+    const cashLimit = monthlySpendWithDrip(portfolio, monthlyAmount);
     buyTQQQToTarget(portfolio, 0.9, prices, 1 / Math.max(1, decision.rampMonths), cashLimit);
   } else if (decision.key === "smallDipBuy") {
     buyQQQ(portfolio, Math.min(portfolio.cash, monthlyAmount * 2), prices.qqq);
@@ -816,8 +816,35 @@ function applySignalAction(portfolio, decision, prices, monthlyAmount) {
     sellTQQQWithFloor(portfolio, 1 / 12, prices, 0.2);
   } else if (decision.key === "normalDca") {
     buyTQQQToTarget(portfolio, 0.2, prices);
-    const drip = Math.min(portfolio.cash, monthlyAmount + Math.max(0, portfolio.cash - monthlyAmount) / 6);
-    buyQQQ(portfolio, drip, prices.qqq);
+    buyQQQ(portfolio, monthlySpendWithDrip(portfolio, monthlyAmount), prices.qqq);
+  }
+}
+
+function monthlySpendWithDrip(portfolio, monthlyAmount, spareFraction = 1 / 6) {
+  return Math.min(portfolio.cash, monthlyAmount + Math.max(0, portfolio.cash - monthlyAmount) * spareFraction);
+}
+
+function applySignalQqqAction(portfolio, decision, prices, monthlyAmount) {
+  if (decision.key === "bottomAttack") {
+    buyQQQ(portfolio, monthlySpendWithDrip(portfolio, monthlyAmount, 1 / 3), prices.qqq);
+  } else if (decision.key === "rampTqqq" || decision.key === "normalDca") {
+    buyQQQ(portfolio, monthlySpendWithDrip(portfolio, monthlyAmount), prices.qqq);
+  } else if (decision.key === "smallDipBuy") {
+    buyQQQ(portfolio, Math.min(portfolio.cash, monthlyAmount * 2), prices.qqq);
+  }
+}
+
+function applySignalTqqqAction(portfolio, decision, prices, monthlyAmount) {
+  if (decision.key === "bottomAttack") {
+    buyTQQQ(portfolio, monthlySpendWithDrip(portfolio, monthlyAmount, 1 / 3), prices.tqqq);
+  } else if (decision.key === "crashDefense") {
+    sellTQQQ(portfolio, 0.5, prices.tqqq);
+  } else if (decision.key === "trimHeat") {
+    sellTQQQ(portfolio, 1 / 12, prices.tqqq);
+  } else if (decision.key === "rampTqqq" || decision.key === "normalDca") {
+    buyTQQQ(portfolio, monthlySpendWithDrip(portfolio, monthlyAmount), prices.tqqq);
+  } else if (decision.key === "smallDipBuy") {
+    buyTQQQ(portfolio, Math.min(portfolio.cash, monthlyAmount), prices.tqqq);
   }
 }
 
@@ -834,6 +861,7 @@ function summarizePortfolios(portfolios, finalPrices, actionStats) {
     const finalValue = valueOf(portfolio, finalPrices);
     const finalTime = new Date(`${finalPrices.date}T00:00:00Z`).getTime();
     const flows = [...portfolio.flows, { time: finalTime, amount: finalValue }];
+    const signalLike = key.startsWith("signal");
     return {
       key,
       finalValue,
@@ -844,7 +872,7 @@ function summarizePortfolios(portfolios, finalPrices, actionStats) {
       regression: regression(portfolio.points),
       risk: riskStats(portfolio.points),
       points: portfolio.points,
-      actionCounts: key === "signal" ? actionCountsFromStats(actionStats) : undefined,
+      actionCounts: signalLike ? actionCountsFromStats(actionStats) : undefined,
       actionStats: key === "signal" ? actionStats : undefined,
     };
   });
@@ -913,7 +941,7 @@ function eventRecaps(strategies) {
         endValue: last.value,
         returnPct: first.value > 0 ? last.value / first.value - 1 : null,
         maxDrawdown: maxNavDrawdown(points),
-        actionCounts: strategy.key === "signal" ? actionCountsInWindow(points) : undefined,
+        actionCounts: strategy.key.startsWith("signal") ? actionCountsInWindow(points) : undefined,
       };
     }).filter(Boolean);
     return { ...event, strategies: strategiesInWindow };
@@ -981,6 +1009,8 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
     tqqq: emptyPortfolio(),
     blend8020: emptyPortfolio(),
     signal: emptyPortfolio(),
+    signalQqq: emptyPortfolio(),
+    signalTqqq: emptyPortfolio(),
   };
   let lastMonth = "";
   let startTime = null;
@@ -1002,7 +1032,7 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
     lastSignalRecordedValue = signalValue;
     const qqqPrice = previousPrice.qqqClose || null;
     for (const [key, portfolio] of Object.entries(portfolios)) {
-      record(portfolio, previousPrice, startTime, key === "signal" ? monthAction : null, qqqPrice);
+      record(portfolio, previousPrice, startTime, key.startsWith("signal") ? monthAction : null, qqqPrice);
     }
   };
 
@@ -1037,6 +1067,8 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
     if (!executedThisMonth.has(decision.key)) {
       executedThisMonth.add(decision.key);
       applySignalAction(portfolios.signal, decision, price, monthlyAmount);
+      applySignalQqqAction(portfolios.signalQqq, decision, price, monthlyAmount);
+      applySignalTqqqAction(portfolios.signalTqqq, decision, price, monthlyAmount);
       signalMemory = memoryAfterAction(signalMemory, decision);
       monthAction = decision.key;
       actionStats[decision.key].count += 1;
@@ -1074,6 +1106,7 @@ async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
       cape: `CAPE percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window.`,
       drawdown: `Drawdown uses a rolling ${ROLLING_HIGH_DAYS / 252}-year high of 5-day Nasdaq-100 averages.`,
       costs: "QQQ/TQQQ use adjusted ETF closes when available; older pre-inception sections are synthetic. Synthetic QQQ adds a 0.7% dividend proxy. Synthetic TQQQ deducts 0.95% expense ratio plus approximate 2x financing cost. Cash earns FEDFUNDS when available, otherwise a coarse historical short-rate approximation.",
+      wrappers: "Signal-guided QQQ and signal-guided TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash.",
     },
     strategies,
     sensitivity: sensitivityGrid(data, startDate, monthlyAmount, states),

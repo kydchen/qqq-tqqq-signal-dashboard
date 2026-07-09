@@ -21,7 +21,7 @@ async function main() {
 	    assert(market.dataQuality.qqq.count > 1000);
 	    assert(market.dataQuality.tqqq.count > 1000);
 	    const result = await backtest({ start: "2020-01" });
-	    assert.equal(result.strategies.length, 4);
+	    assert.deepEqual(result.strategies.map((strategy) => strategy.key), ["qqq", "tqqq", "blend8020", "signal", "signalQqq", "signalTqqq"]);
 	    assert(result.sensitivity.points.length === 9);
 	    assert(result.events.length >= 2);
 	    assert(result.walkForward.length >= 1);
@@ -35,6 +35,8 @@ async function main() {
 	    }
 	    const signal = result.strategies.find((strategy) => strategy.key === "signal");
 	    assert(signal.actionStats.normalDca.count >= 0);
+	    assert(result.strategies.find((strategy) => strategy.key === "signalQqq").points.every((point) => point.tqqqValue === 0));
+	    assert(result.strategies.find((strategy) => strategy.key === "signalTqqq").points.every((point) => point.qqqValue === 0));
 	  }
 
   console.log("check ok");

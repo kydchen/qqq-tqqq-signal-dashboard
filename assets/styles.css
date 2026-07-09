@@ -302,6 +302,7 @@ h2 {
 
 .method-panel,
 .actions-panel,
+.guide-panel,
 .backtest-panel,
 .sources-panel {
   margin-top: 16px;
@@ -334,6 +335,95 @@ h2 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+}
+
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.guide-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfe;
+}
+
+.guide-card-head {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.guide-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.guide-card h3 {
+  margin: 0 0 3px;
+  font-size: 16px;
+}
+
+.guide-card p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.guide-now {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 11px;
+}
+
+.guide-now span {
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.guide-now strong {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.guide-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.guide-stats div {
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+
+.guide-stats span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.guide-stats strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
 }
 
 .action-grid {
@@ -1132,6 +1222,7 @@ canvas {
   }
   .market-grid,
   .method-grid,
+  .guide-grid,
   .action-grid,
   .metrics-grid,
   .positions-grid,

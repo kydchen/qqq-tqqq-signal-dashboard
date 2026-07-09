@@ -5,9 +5,12 @@ const colors = {
   tqqq: "#b42318",
   blend8020: "#0f766e",
   signal: "#6d28d9",
+  signalQqq: "#3b82f6",
+  signalTqqq: "#f97316",
 };
 
 const actionOrder = ["bottomAttack", "rampTqqq", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"];
+const guideStrategyKeys = { qqqOnly: "signalQqq", mixed: "signal", tqqqOnly: "signalTqqq" };
 const actionVisuals = {
   bottomAttack: { icon: "T", color: "#b42318" },
   rampTqqq: { icon: "T+", color: "#dc2626" },
@@ -50,6 +53,11 @@ const copy = {
     actionCatalogKicker: "动作清单",
     actionCatalogTitle: "三信号策略会做什么",
     actionCatalogNote: "三信号策略按低位、快崩、高位、常态四类规则处理。快崩、过热、高位暂停时，当月新增资金不买 QQQ/TQQQ，留现金；三个基准策略只按月买入，不卖出。",
+    guideKicker: "执行框架",
+    guideTitle: "同一组三信号，三种用法",
+    guideNote: "三信号不是只能服务于 QQQ/TQQQ 混合仓。它也可以作为纯 QQQ 或纯 TQQQ 定投的节奏器：决定本月买入、加速、暂停，或对 TQQQ 降风险。",
+    guideStatsFinal: "期末资产",
+    guideStatsDrawdown: "最大回撤",
     backtestKicker: "收益回测",
     backtestTitle: "比较不同定投方式",
     sensitivityTitle: "参数敏感性",
@@ -60,7 +68,7 @@ const copy = {
     scaleLabel: "对数纵轴",
     qqqAxisLabel: "右轴显示 QQQ 价格",
     actionMarkersLabel: "浮窗显示月度动作",
-    backtestNote: "回测固定为每月投入 $1,000。QQQ/TQQQ 有真实 adjusted close 时使用真实 ETF 数据；早于 TQQQ 成立的区间才用 Nasdaq-100 日收益合成。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。三信号策略包含现金仓、小底 QQQ 加仓、大底分批 TQQQ 进攻、大底后 6 个月把 TQQQ 提到约 90%、高位 TQQQ 锁利卖出，并保留 20% TQQQ 地板仓。",
+    backtestNote: "回测固定为每月投入 $1,000。QQQ/TQQQ 有真实 adjusted close 时使用真实 ETF 数据；早于 TQQQ 成立的区间才用 Nasdaq-100 日收益合成。80/20 是每月新增资金 80% 买 QQQ、20% 买 TQQQ，不对存量仓位再平衡。三信号策略包含现金仓、小底 QQQ 加仓、大底分批 TQQQ 进攻、大底后 6 个月把 TQQQ 提到约 90%、高位 TQQQ 锁利卖出，并保留 20% TQQQ 地板仓。信号调度 QQQ / TQQQ 使用同一组月度信号，但限制为单一 ETF 加现金。",
     workbenchTitle: "策略工作台",
     exportCsv: "导出 CSV",
     copyLink: "复制链接",
@@ -151,6 +159,53 @@ const copy = {
       pauseAtHigh: { title: "高位暂停", condition: "CAPE >= 70% 且指数距高点 < 5%", operation: "不买 QQQ/TQQQ，当月资金留现金" },
       normalDca: { title: "正常定投", condition: "没有触发以上任何动作", operation: "TQQQ 不到 20% 就先买 TQQQ；够了以后买 QQQ，现金仓每月拿 1/6 买回 QQQ" },
     },
+    guides: {
+      qqqOnly: {
+        badge: "Q",
+        title: "纯 QQQ 定投",
+        body: "把信号当成买入节奏器，不卖 QQQ。高估、快崩、过热时先把当月资金留成现金；小底和大底再加速买 QQQ。",
+        rule: "适合想降低追高风险、但不想碰杠杆 ETF 的账户。",
+        actions: {
+          bottomAttack: "用当月资金和约 1/3 现金仓加买 QQQ。",
+          rampTqqq: "大底后的 6 个月继续用现金仓分批买 QQQ。",
+          smallDipBuy: "最多用 2x 月投入买 QQQ。",
+          crashDefense: "不卖 QQQ，当月资金留现金，等低位信号确认。",
+          trimHeat: "不卖 QQQ，当月资金留现金。",
+          pauseAtHigh: "暂停买 QQQ，当月资金留现金。",
+          normalDca: "买 QQQ；若之前攒了现金，每月最多拿 1/6 补回。",
+        },
+      },
+      mixed: {
+        badge: "Q/T",
+        title: "QQQ/TQQQ 混合仓",
+        body: "用 QQQ 做主仓，TQQQ 只在低位承担进攻角色；高位和快崩时允许卖 TQQQ、留现金。",
+        rule: "适合愿意用少量杠杆换更高弹性，但仍重视回撤控制的账户。",
+        actions: {
+          bottomAttack: "现金仓分批买 TQQQ，后续 6 个月把 TQQQ 提到约 90%。",
+          rampTqqq: "继续买 TQQQ，必要时卖一部分 QQQ 换 TQQQ。",
+          smallDipBuy: "最多用 2x 月投入买 QQQ。",
+          crashDefense: "卖出约 1/2 TQQQ，当月资金留现金。",
+          trimHeat: "卖出约 1/12 TQQQ，但保留 20% TQQQ 底仓。",
+          pauseAtHigh: "暂停买 QQQ/TQQQ，当月资金留现金。",
+          normalDca: "先补 20% TQQQ 底仓，够了以后买 QQQ。",
+        },
+      },
+      tqqqOnly: {
+        badge: "T",
+        title: "纯 TQQQ 定投",
+        body: "信号在这里更像风控开关：低位买、常态小步买，高位暂停，快崩和过热时卖出一部分 TQQQ。",
+        rule: "只适合能承受大幅回撤、并接受长期现金等待的高风险账户。",
+        actions: {
+          bottomAttack: "用当月资金和约 1/3 现金仓买 TQQQ。",
+          rampTqqq: "大底后的 6 个月继续分批买 TQQQ。",
+          smallDipBuy: "只用当月资金买 TQQQ，不做 2x 加仓。",
+          crashDefense: "卖出约 1/2 TQQQ，当月资金留现金。",
+          trimHeat: "卖出约 1/12 TQQQ，当月资金留现金。",
+          pauseAtHigh: "暂停买 TQQQ，当月资金留现金。",
+          normalDca: "买 TQQQ；若之前攒了现金，每月最多拿 1/6 补回。",
+        },
+      },
+    },
     chips: {
       valuationCheap: "估值便宜",
       deepDrawdown: "深度回撤",
@@ -165,6 +220,8 @@ const copy = {
       tqqq: "TQQQ 定投",
       blend8020: "新增资金 80/20（不再平衡）",
       signal: "三信号策略",
+      signalQqq: "信号调度 QQQ",
+      signalTqqq: "信号调度 TQQQ",
     },
     metricLabels: {
       finalValue: "期末资产",
@@ -212,6 +269,11 @@ const copy = {
     actionCatalogKicker: "Action list",
     actionCatalogTitle: "What the signal strategy can do",
     actionCatalogNote: "The signal strategy handles low-signal, fast-crash, high-heat, and normal regimes. In fast-crash, heat-trim, and pause-at-high months, new cash does not buy QQQ/TQQQ. Benchmarks only buy monthly and never sell.",
+    guideKicker: "Execution modes",
+    guideTitle: "One signal set, three ways to use it",
+    guideNote: "The three signals do not only apply to a mixed QQQ/TQQQ book. They can also throttle pure QQQ or pure TQQQ DCA: buy, accelerate, pause, or de-risk TQQQ.",
+    guideStatsFinal: "Final value",
+    guideStatsDrawdown: "Max drawdown",
     backtestKicker: "Return backtest",
     backtestTitle: "Compare DCA variants",
     sensitivityTitle: "Parameter sensitivity",
@@ -222,7 +284,7 @@ const copy = {
     scaleLabel: "Log y-axis",
     qqqAxisLabel: "Show QQQ price axis",
     actionMarkersLabel: "Show actions in tooltip",
-    backtestNote: "Backtest uses a fixed $1,000 monthly contribution. QQQ/TQQQ use adjusted ETF closes when available; pre-TQQQ-inception ranges are synthetic from Nasdaq-100 daily returns. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings.",
+    backtestNote: "Backtest uses a fixed $1,000 monthly contribution. QQQ/TQQQ use adjusted ETF closes when available; pre-TQQQ-inception ranges are synthetic from Nasdaq-100 daily returns. The 80/20 variant puts each new monthly contribution 80% into QQQ and 20% into TQQQ; it does not rebalance existing holdings. Signal-guided QQQ / TQQQ reuse the same monthly signals but restrict trades to one ETF plus cash.",
     workbenchTitle: "Strategy workbench",
     exportCsv: "Export CSV",
     copyLink: "Copy link",
@@ -313,6 +375,53 @@ const copy = {
       pauseAtHigh: { title: "Pause at high", condition: "CAPE >= 70% and index is within 5% of its high", operation: "Do not buy QQQ/TQQQ; hold monthly cash" },
       normalDca: { title: "Normal DCA", condition: "No higher-priority rule fires", operation: "Buy TQQQ until it reaches 20%; then buy QQQ, using 1/6 of spare cash monthly" },
     },
+    guides: {
+      qqqOnly: {
+        badge: "Q",
+        title: "QQQ-only DCA",
+        body: "Use the signals as a buying throttle, not a sell trigger. Expensive, fast-crash, and heat months keep new cash in cash; dip and bottom months deploy it into QQQ.",
+        rule: "For accounts that want less chase risk without using leveraged ETFs.",
+        actions: {
+          bottomAttack: "Use monthly cash plus about 1/3 of saved cash to buy QQQ.",
+          rampTqqq: "Keep deploying saved cash into QQQ over the 6 post-bottom months.",
+          smallDipBuy: "Buy QQQ with up to 2x the monthly contribution.",
+          crashDefense: "Do not sell QQQ; keep this month's contribution in cash.",
+          trimHeat: "Do not sell QQQ; keep this month's contribution in cash.",
+          pauseAtHigh: "Pause QQQ buying and keep this month's contribution in cash.",
+          normalDca: "Buy QQQ; if cash was saved earlier, drip back up to 1/6 per month.",
+        },
+      },
+      mixed: {
+        badge: "Q/T",
+        title: "Mixed QQQ/TQQQ book",
+        body: "Use QQQ as the core and reserve TQQQ for low-regime attack. High and fast-crash regimes can trim TQQQ and raise cash.",
+        rule: "For accounts willing to use limited leverage while still managing path risk.",
+        actions: {
+          bottomAttack: "Deploy cash into TQQQ in stages, then spend 6 months lifting TQQQ toward about 90%.",
+          rampTqqq: "Keep buying TQQQ and rotate some QQQ into TQQQ if needed.",
+          smallDipBuy: "Buy QQQ with up to 2x the monthly contribution.",
+          crashDefense: "Sell about half of TQQQ and keep this month's contribution in cash.",
+          trimHeat: "Sell about 1/12 of TQQQ while keeping a 20% TQQQ floor.",
+          pauseAtHigh: "Pause QQQ/TQQQ buying and keep this month's contribution in cash.",
+          normalDca: "Refill the 20% TQQQ floor first, then buy QQQ.",
+        },
+      },
+      tqqqOnly: {
+        badge: "T",
+        title: "TQQQ-only DCA",
+        body: "Here the signals are mainly a risk switch: buy in low/normal regimes, pause near highs, and sell some TQQQ during fast-crash or heat regimes.",
+        rule: "Only for high-risk accounts that can tolerate large drawdowns and long cash waits.",
+        actions: {
+          bottomAttack: "Use monthly cash plus about 1/3 of saved cash to buy TQQQ.",
+          rampTqqq: "Keep deploying saved cash into TQQQ over the 6 post-bottom months.",
+          smallDipBuy: "Buy TQQQ with the monthly contribution only; no 2x add.",
+          crashDefense: "Sell about half of TQQQ and keep this month's contribution in cash.",
+          trimHeat: "Sell about 1/12 of TQQQ and keep this month's contribution in cash.",
+          pauseAtHigh: "Pause TQQQ buying and keep this month's contribution in cash.",
+          normalDca: "Buy TQQQ; if cash was saved earlier, drip back up to 1/6 per month.",
+        },
+      },
+    },
     chips: {
       valuationCheap: "Cheap valuation",
       deepDrawdown: "Deep drawdown",
@@ -327,6 +436,8 @@ const copy = {
       tqqq: "TQQQ DCA",
       blend8020: "New-cash 80/20, no rebalance",
       signal: "Three-signal",
+      signalQqq: "Signal-guided QQQ",
+      signalTqqq: "Signal-guided TQQQ",
     },
     metricLabels: {
       finalValue: "Final value",
@@ -366,7 +477,7 @@ function setLang(nextLang) {
 let lang = initialLang();
 let marketData = null;
 let backtestData = null;
-let selected = new Set(["qqq", "blend8020", "signal"]);
+let selected = new Set(["qqq", "tqqq", "signal", "signalQqq", "signalTqqq"]);
 let showActionMarkers = false;
 let errorMessage = "";
 let backtestRequestId = 0;
@@ -553,6 +664,9 @@ function renderStatic() {
   $("actionCatalogKicker").textContent = t.actionCatalogKicker;
   $("actionCatalogTitle").textContent = t.actionCatalogTitle;
   $("actionCatalogNote").textContent = t.actionCatalogNote;
+  $("guideKicker").textContent = t.guideKicker;
+  $("guideTitle").textContent = t.guideTitle;
+  $("guideNote").textContent = t.guideNote;
   $("backtestKicker").textContent = t.backtestKicker;
   $("backtestTitle").textContent = t.backtestTitle;
   $("startLabel").textContent = t.startLabel;
@@ -575,6 +689,7 @@ function renderStatic() {
   }));
 
   renderActionCatalog();
+  renderExecutionGuides();
   if (!marketData && !errorMessage) {
     $("action").textContent = t.loadingAction;
     $("operation").textContent = t.loadingOperation;
@@ -598,6 +713,38 @@ function renderActionCatalog() {
         <p class="condition">${action.condition}</p>
         <p>${action.operation}</p>
       </div>
+    `;
+    return card;
+  }));
+}
+
+function renderExecutionGuides() {
+  const t = copy[lang];
+  const currentKey = marketData?.decision?.key || "normalDca";
+  $("executionGuides").replaceChildren(...Object.entries(t.guides).map(([key, guide]) => {
+    const card = document.createElement("article");
+    const strategy = backtestData?.strategies.find((item) => item.key === guideStrategyKeys[key]);
+    const stats = strategy ? `
+      <div class="guide-stats">
+        <div><span>${t.guideStatsFinal}</span><strong>${fmtMoney(strategy.finalValue)}</strong></div>
+        <div><span>${t.guideStatsDrawdown}</span><strong>${fmtPct(strategy.maxDrawdown * 100)}</strong></div>
+      </div>
+    ` : "";
+    card.className = "guide-card";
+    card.innerHTML = `
+      <div class="guide-card-head">
+        <span class="guide-badge">${guide.badge}</span>
+        <div>
+          <h3>${guide.title}</h3>
+          <p>${guide.rule}</p>
+        </div>
+      </div>
+      <p>${guide.body}</p>
+      <div class="guide-now">
+        <span>${t.decisionKicker}</span>
+        <strong>${guide.actions[currentKey]}</strong>
+      </div>
+      ${stats}
     `;
     return card;
   }));
@@ -663,6 +810,7 @@ function renderMarket() {
     chip(t.chips.fastCrash, decision.defensiveFlags.fastCrash),
     chip(t.chips.quietVix, decision.defensiveFlags.quietVix),
   );
+  renderExecutionGuides();
 }
 
 function renderStrategyToggles() {
@@ -687,12 +835,13 @@ function renderStrategyToggles() {
 function renderBacktest() {
   if (!backtestData) return;
   renderChart();
+  renderExecutionGuides();
   renderWorkbench();
   const t = copy[lang];
   const cards = backtestData.strategies.map((strategy) => {
     const card = document.createElement("article");
     card.className = `metric-card${selected.has(strategy.key) ? "" : " muted-card"}`;
-    const bottomRow = strategy.key === "signal"
+    const bottomRow = strategy.key.startsWith("signal")
       ? `<div class="metric-row"><span>${t.metricLabels.bottomAttack}</span><strong>${strategy.actionCounts?.bottomAttack || 0}</strong></div>`
       : "";
     card.innerHTML = `
