@@ -782,20 +782,20 @@ function replayDecisionMemory(prices, nasdaq, vix, capeChrono, beforeMonth, thre
   let memory = { heatMonths: 0, rampMonths: 0, month: "" };
   const capeCursor = { index: 0 };
   let lastMonth = "";
-  let executedThisMonth = new Set();
+  let executedThisMonth = false;
   for (let i = 30; i < prices.length; i += 1) {
     const price = prices[i];
     const month = price.date.slice(0, 7);
     if (month >= beforeMonth) break;
     if (month !== lastMonth) {
       lastMonth = month;
-      executedThisMonth = new Set();
+      executedThisMonth = false;
     }
     const state = states?.[i] || stateAt(i, price, nasdaq, vix, capeChrono, capeCursor);
     memory = advanceSignalMonth(memory, state, month, thresholds);
     const decision = calculateDecision(state, memory, thresholds);
-    if (!executedThisMonth.has(decision.key)) {
-      executedThisMonth.add(decision.key);
+    if (!executedThisMonth) {
+      executedThisMonth = true;
       memory = memoryAfterAction(memory, decision);
     }
   }
@@ -941,9 +941,9 @@ function eventRecaps(strategies) {
       const last = points.at(-1);
       return {
         key: strategy.key,
-        startValue: first.value,
-        endValue: last.value,
-        returnPct: first.value > 0 ? last.value / first.value - 1 : null,
+        startNav: first.nav,
+        endNav: last.nav,
+        returnPct: first.nav > 0 ? last.nav / first.nav - 1 : null,
         maxDrawdown: maxNavDrawdown(points),
         actionCounts: strategy.key.startsWith("signal") ? actionCountsInWindow(points) : undefined,
       };
@@ -1020,7 +1020,7 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
   let startTime = null;
   let signalMemory = { heatMonths: 0, rampMonths: 0, month: "" };
   const capeCursor = { index: 0 };
-  let executedThisMonth = new Set();
+  let executedThisMonth = false;
   let monthAction = null;
   let previousPrice = null;
   let lastSignalRecordedValue = null;
@@ -1052,7 +1052,7 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
     if (month !== lastMonth) {
       recordMonth();
       lastMonth = month;
-      executedThisMonth = new Set();
+      executedThisMonth = false;
       monthAction = null;
 
       for (const portfolio of Object.values(portfolios)) {
@@ -1068,8 +1068,8 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
     const state = states?.[i] || stateAt(i, price, nasdaq, vix, capeChrono, capeCursor);
     signalMemory = advanceSignalMonth(signalMemory, state, month, thresholds);
     const decision = calculateDecision(state, signalMemory, thresholds);
-    if (!executedThisMonth.has(decision.key)) {
-      executedThisMonth.add(decision.key);
+    if (!executedThisMonth) {
+      executedThisMonth = true;
       applySignalAction(portfolios.signal, decision, price, monthlyAmount);
       applySignalQqqAction(portfolios.signalQqq, decision, price, monthlyAmount);
       applySignalTqqqAction(portfolios.signalTqqq, decision, price, monthlyAmount);
@@ -1110,7 +1110,8 @@ async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
       cape: `CAPE percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window.`,
       drawdown: `Drawdown uses a rolling ${ROLLING_HIGH_DAYS / 252}-year high of 5-day Nasdaq-100 averages.`,
       costs: "QQQ/TQQQ use adjusted ETF closes when available; older pre-inception sections are synthetic. Synthetic QQQ adds a 0.7% dividend proxy. Synthetic TQQQ deducts 0.95% expense ratio plus approximate 2x financing cost. Cash earns FEDFUNDS when available, otherwise a coarse historical short-rate approximation.",
-      wrappers: "Tactical QQQ and tactical TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash. The 80/20 compatibility strategy is still returned by the API, but it is hidden from the main UI and CSV export.",
+      tqqqHoldingCosts: "Buying TQQQ shares with cash does not create daily broker margin calls. Fund leverage, derivatives, financing, fees, compounding, and tracking effects are embedded in actual adjusted TQQQ closes after inception and approximated in synthetic pre-inception data. Broker margin interest is excluded and should be added separately if TQQQ is bought with borrowed money.",
+      wrappers: "Tactical QQQ and tactical TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash.",
     },
     strategies,
     sensitivity: sensitivityGrid(data, startDate, monthlyAmount, states),
