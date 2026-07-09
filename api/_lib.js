@@ -827,6 +827,10 @@ function monthlySpendWithDrip(portfolio, monthlyAmount, spareFraction = 1 / 6) {
 function applySignalQqqAction(portfolio, decision, prices, monthlyAmount) {
   if (decision.key === "bottomAttack") {
     buyQQQ(portfolio, monthlySpendWithDrip(portfolio, monthlyAmount, 1 / 3), prices.qqq);
+  } else if (decision.key === "crashDefense") {
+    sellQQQ(portfolio, portfolio.qqq * prices.qqq * 0.25, prices.qqq);
+  } else if (decision.key === "trimHeat") {
+    sellQQQ(portfolio, portfolio.qqq * prices.qqq / 12, prices.qqq);
   } else if (decision.key === "rampTqqq" || decision.key === "normalDca") {
     buyQQQ(portfolio, monthlySpendWithDrip(portfolio, monthlyAmount), prices.qqq);
   } else if (decision.key === "smallDipBuy") {
@@ -1106,7 +1110,7 @@ async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
       cape: `CAPE percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window.`,
       drawdown: `Drawdown uses a rolling ${ROLLING_HIGH_DAYS / 252}-year high of 5-day Nasdaq-100 averages.`,
       costs: "QQQ/TQQQ use adjusted ETF closes when available; older pre-inception sections are synthetic. Synthetic QQQ adds a 0.7% dividend proxy. Synthetic TQQQ deducts 0.95% expense ratio plus approximate 2x financing cost. Cash earns FEDFUNDS when available, otherwise a coarse historical short-rate approximation.",
-      wrappers: "Signal-guided QQQ and signal-guided TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash.",
+      wrappers: "Tactical QQQ and tactical TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash. The 80/20 compatibility strategy is still returned by the API, but it is hidden from the main UI and CSV export.",
     },
     strategies,
     sensitivity: sensitivityGrid(data, startDate, monthlyAmount, states),

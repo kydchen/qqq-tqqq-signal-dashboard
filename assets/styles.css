@@ -339,7 +339,7 @@ h2 {
 
 .guide-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -1094,8 +1094,8 @@ canvas {
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
   margin: 14px 20px;
 }
 
@@ -1152,7 +1152,7 @@ canvas {
 .metric-card {
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 13px;
+  padding: 11px;
   background: #fff;
 }
 
@@ -1161,17 +1161,17 @@ canvas {
 }
 
 .metric-card h3 {
-  margin: 0 0 10px;
-  font-size: 15px;
+  margin: 0 0 8px;
+  font-size: 14px;
 }
 
 .metric-row {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
-  padding: 5px 0;
+  gap: 6px;
+  padding: 4px 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .metric-row strong {
