@@ -81,6 +81,13 @@ button.ghost.active {
   border-bottom: 1px solid var(--line);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 h1, h2, p {
   margin: 0;
 }
@@ -1605,7 +1612,8 @@ canvas {
 }
 
 .metric-card.muted-card {
-  opacity: .45;
+  border-style: dashed;
+  background: #f8fafc;
 }
 
 .metric-card h3 {
@@ -1659,6 +1667,12 @@ canvas {
   border-color: #f1a39d;
 }
 
+@media (min-width: 861px) and (max-width: 1100px) {
+  .backtest-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 860px) {
   .topbar,
   .split,
@@ -1676,6 +1690,13 @@ canvas {
   }
   .compact {
     margin-top: 16px;
+  }
+  .header-actions {
+    justify-content: space-between;
+    margin-top: 16px;
+  }
+  .header-actions .compact {
+    margin-top: 0;
   }
   .market-grid,
   .execution-layout,

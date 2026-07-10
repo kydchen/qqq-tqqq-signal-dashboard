@@ -14,7 +14,10 @@ module.exports = async function handler(req, res) {
   const checks = [await check("Shared market data", async () => {
     const data = await loadData();
     return {
+      ok: data.staleSources.length === 0,
       staleSources: data.staleSources,
+      fallbackSources: data.fallbackSources,
+      sourceLagDays: data.sourceLagDays,
       nasdaqLatest: data.nasdaq.at(-1),
       qqqLatest: data.qqq.at(-1),
       tqqqLatest: data.tqqq.at(-1),

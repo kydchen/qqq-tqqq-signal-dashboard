@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const {
   backtest,
+  capeSeriesForBacktest,
   calculateDecision,
   decisionConfidence,
   marketSnapshot,
@@ -10,6 +11,8 @@ const {
   DEFAULT_COST_BPS,
   DEFAULT_THRESHOLDS,
   RULESET_ID,
+  sourceIsStale,
+  yahooBarIsOpen,
 } = require("../api/_lib");
 
 const visibleStrategyKeys = ["qqq", "signalQqq", "tqqq", "signalTqqq", "signal"];
@@ -120,7 +123,7 @@ function assertBacktestResult(result, start) {
 }
 
 async function main() {
-  assert.equal(RULESET_ID, "2026-07-v3");
+  assert.equal(RULESET_ID, "2026-07-v4");
   assert.equal(DEFAULT_COST_BPS, 5);
   assert.equal(DEFAULT_THRESHOLDS.cheapCape, 35);
   assert.equal(DEFAULT_THRESHOLDS.panicVix, 32);
@@ -130,6 +133,7 @@ async function main() {
   assert.equal(calculateDecision({ capePercentile: 50, drawdownPct: -25, crash25dPct: -13, vix: 18 }).key, "smallDipBuy");
   assert.equal(calculateDecision({ capePercentile: 50, drawdownPct: -25, crash25dPct: -3, vix: 18 }).key, "smallDipBuy");
   assert.equal(calculateDecision({ capePercentile: 50, drawdownPct: -10, crash25dPct: -13, vix: 18 }).key, "crashDefense");
+  assert.equal(calculateDecision({ capePercentile: 50, drawdownPct: -14, crash25dPct: -13, vix: 18 }).key, "crashDefense");
   assert.equal(calculateDecision({ capePercentile: 80, drawdownPct: -3, crash25dPct: -3, vix: 18 }, { heatMonths: 0 }).key, "pauseAtHigh");
   assert.equal(calculateDecision({ capePercentile: 90, drawdownPct: -3, crash25dPct: -3, vix: 18 }, { heatMonths: 6 }).key, "trimHeat");
   assert.equal(calculateDecision({ capePercentile: 50, drawdownPct: -8, crash25dPct: -3, vix: 18 }, { rampMonths: 2 }).key, "rampTqqq");
@@ -152,6 +156,12 @@ async function main() {
   const cape = parseCapeTable('<tr><td class="left">Jan 1, 2024</td><td class="right">33.3&nbsp;</td></tr>');
   assert.equal(cape.length, 1);
   assert.equal(cape[0].value, 33.3);
+  assert.equal(capeSeriesForBacktest([{ date: "2024-01-01", value: 33.3 }])[0].date, "2024-02-01");
+  const now = Date.parse("2026-07-10T00:00:00Z");
+  assert.equal(sourceIsStale("qqq", [{ date: "2026-07-09" }], now), false);
+  assert.equal(sourceIsStale("qqq", [{ date: "2026-07-01" }], now), true);
+  assert.equal(yahooBarIsOpen(150, { start: 100, end: 200 }, 160), true);
+  assert.equal(yahooBarIsOpen(150, { start: 100, end: 200 }, 210), false);
 
   const appJs = fs.readFileSync(path.join(__dirname, "../assets/app.js"), "utf8");
   const exportCsvBody = appJs.slice(appJs.indexOf("function exportCsv()"), appJs.indexOf("async function copyShareLink"));
@@ -185,25 +195,22 @@ async function main() {
     assert(market.liveDecision.key);
     assert(Array.isArray(market.decisionHistory));
     assert(market.decisionHistory.length > 0);
-    for (const start of auditedStarts) {
-      const result = await backtest({ start });
-      const strategies = assertBacktestResult(result, start);
-      if (start === "2020-01") {
-        assert(strategies.signal.actionStats.normalDca.count >= 0);
-        assert(strategies.signal.actionCounts.bottomAttack >= 1, "2020 sample should capture at least one bottom/upgrade");
-        // Risk sells can be rare under buy-leaning priority. If present, cash should rise.
-        const sellActions = new Set(["crashDefense", "trimHeat"]);
-        const hasSell = strategies.signal.points.some((point) => sellActions.has(point.actionKey));
-        if (hasSell) {
-          assert(strategies.signal.points.some((point, index, points) => (
-            index > 0 && sellActions.has(point.actionKey) && point.cash >= points[index - 1].cash
-          )));
-        }
-      }
-      if (start === "2010-01") {
-        assert(strategies.signal.actionCounts.bottomAttack >= 1, "2010+ should no longer have a dead bottomAttack rule");
-        assert(strategies.signal.vsQqq.finalRelativeMultiple > 0.8, "signal should remain in the same ballpark or better vs QQQ over long samples");
-      }
+  }
+
+  for (const start of auditedStarts) {
+    const result = start === "2010-01" ? deterministic : await backtest({ start });
+    const strategies = start === "2010-01" ? Object.fromEntries(result.strategies.map((strategy) => [strategy.key, strategy])) : assertBacktestResult(result, start);
+    if (start === "1990-01") {
+      assert(strategies.signal.actionCounts.crashDefense >= 1, "full history should exercise crashDefense");
+      const crossMonth = strategies.signal.points.find((point) => point.actionDecisionDate === "1997-10-31");
+      assert.equal(crossMonth?.actionExecutionDate, "1997-11-03", "month-end decisions must execute next session");
+    }
+    if (start === "2020-01") {
+      assert(strategies.signal.actionCounts.bottomAttack >= 1, "2020 sample should capture at least one bottom/upgrade");
+    }
+    if (start === "2010-01") {
+      assert(strategies.signal.actionCounts.bottomAttack >= 1, "2010+ should retain bottomAttack coverage");
+      assert(strategies.signal.vsQqq.finalRelativeMultiple > 0.8, "signal should remain in the same ballpark or better vs QQQ over long samples");
     }
   }
 

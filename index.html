@@ -14,15 +14,18 @@
       <div>
         <p id="eyebrow" class="eyebrow">QQQ / TQQQ</p>
         <h1 id="title">纳指三信号仪表盘</h1>
-        <p id="subtitle" class="lede">用估值、回撤和恐慌度决定本月买 QQQ、买 TQQQ、暂停，还是减 TQQQ。</p>
+        <p id="subtitle" class="lede">用估值、回撤和波动率，决定本月买 QQQ、买 TQQQ、暂停，还是减 TQQQ。面向月度定投流程，不是日内交易系统。</p>
       </div>
-      <div class="controls compact">
-        <button id="zhBtn" class="seg active" type="button">中文</button>
-        <button id="enBtn" class="seg" type="button">EN</button>
+      <div class="header-actions">
+        <button id="refreshDataBtn" class="ghost" type="button">刷新数据</button>
+        <div class="controls compact">
+          <button id="zhBtn" class="seg active" type="button" aria-pressed="true">中文</button>
+          <button id="enBtn" class="seg" type="button" aria-pressed="false">EN</button>
+        </div>
       </div>
     </header>
 
-    <div id="error" class="error" hidden></div>
+    <div id="error" class="error" role="alert" aria-live="assertive" hidden></div>
 
     <section id="decisionPanel" class="decision-panel">
       <div class="decision-main">
@@ -32,7 +35,7 @@
             <h2 id="action">加载中</h2>
           </div>
           <div id="confidencePill" class="confidence-pill" hidden>
-            <span id="confidenceLabel">置信度</span>
+            <span id="confidenceLabel">信号强度</span>
             <strong id="confidenceValue">--</strong>
           </div>
         </div>
@@ -55,7 +58,7 @@
 
     <p id="disclaimer" class="disclaimer"></p>
 
-    <section class="market-grid" aria-live="polite">
+    <section class="market-grid">
       <article class="tile">
         <div class="tile-head">
           <span id="capeLabel">CAPE 分位</span>
@@ -129,6 +132,14 @@
             <span id="monthlyInputLabel">本月可投入（USD）</span>
             <input id="monthlyContributionInput" type="number" min="0" step="0.01" inputmode="decimal" value="1000" />
           </label>
+          <label>
+            <span id="executionCostLabel">订单单边摩擦</span>
+            <select id="executionCostInput">
+              <option value="0">0 bp</option>
+              <option value="5" selected>5 bp</option>
+              <option value="10">10 bp</option>
+            </select>
+          </label>
           <label class="checkline execution-checkline">
             <input id="fractionalSharesInput" type="checkbox" checked />
             <span id="fractionalSharesLabel">支持碎股</span>
@@ -138,15 +149,15 @@
             <button id="planOrdersBtn" type="submit">生成订单草稿</button>
             <button id="clearAccountBtn" class="ghost" type="button">清除本地数据</button>
           </div>
-          <p id="accountError" class="form-error" hidden></p>
+          <p id="accountError" class="form-error" role="alert" hidden></p>
         </form>
-        <div class="order-draft" aria-live="polite">
+        <div class="order-draft">
           <div class="order-draft-head">
             <div>
               <p id="orderKicker" class="eyebrow">下一交易时段</p>
               <h3 id="orderTitle">尚未生成订单</h3>
             </div>
-            <span id="orderStatus" class="order-status">待输入</span>
+            <span id="orderStatus" class="order-status" aria-live="polite">待输入</span>
           </div>
           <p id="orderMeta" class="small-note"></p>
           <div id="orderSummary" class="order-summary"></div>
@@ -261,11 +272,11 @@
 
       <div id="strategyToggles" class="strategy-toggles"></div>
       <div class="chart-wrap">
-        <canvas id="equityChart" width="1100" height="520" role="img" aria-label="Backtest equity curve"></canvas>
+        <canvas id="equityChart" width="1100" height="520" role="img" tabindex="0" aria-label="Backtest equity curve"></canvas>
         <div id="tooltip" class="tooltip" hidden></div>
         <div id="chartState" class="chart-state" hidden></div>
       </div>
-      <div id="chartReadout" class="chart-readout"></div>
+      <div id="chartReadout" class="chart-readout" aria-live="polite"></div>
       <div id="workbench" class="workbench"></div>
       <div id="metrics" class="metrics-grid"></div>
       <div id="sensitivity" class="sensitivity"></div>
