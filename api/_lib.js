@@ -11,12 +11,22 @@ const TQQQ_SWAP_SPREAD = 0.005;
 const NDX_PERIOD1 = 497000000; // 1985-10; earliest Yahoo ^NDX range used by this app.
 const VIX_PERIOD1 = 631152000; // 1990-01; UI start years intentionally do not go earlier.
 const DEFAULT_THRESHOLDS = {
-  cheapCape: 20,
+  // Rolling CAPE percentile. The old 20th-percentile bar never fired in
+  // post-1985 monthly samples (min first-of-month percentile ~24), so cheap
+  // valuation was a dead signal. 35 still only lights near crisis troughs.
+  cheapCape: 35,
+  // Soft valuation support when price is already deeply dislocated.
+  supportCape: 50,
+  supportDrawdown: -25,
   highCape: 70,
   bubbleCape: 85,
   deepDrawdown: -20,
+  // Mild drawdown still counts as one low signal for small-dip buys.
+  mildDrawdown: -12,
   fastCrash: -12,
-  panicVix: 40,
+  // VIX 40 only lit 8 first-of-month samples since 1985. 32 matches OOS-friendly
+  // walk-forward picks and still excludes ordinary pullbacks.
+  panicVix: 32,
   quietVix: 12,
 };
 const ACTION_KEYS = ["bottomAttack", "rampTqqq", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"];
@@ -331,11 +341,33 @@ function lastCapeTrigger(capeChrono, predicate) {
   return null;
 }
 
+function isValuationCheap(state, thresholds = DEFAULT_THRESHOLDS) {
+  if (state.capePercentile < thresholds.cheapCape) return true;
+  // Crisis support: CAPE no longer extreme while the index is already crushed.
+  const supportCape = thresholds.supportCape ?? 50;
+  const supportDrawdown = thresholds.supportDrawdown ?? -25;
+  return state.capePercentile < supportCape && state.drawdownPct <= supportDrawdown;
+}
+
+function isDeepDrawdown(state, thresholds = DEFAULT_THRESHOLDS) {
+  return state.drawdownPct <= thresholds.deepDrawdown;
+}
+
+function isMildDrawdown(state, thresholds = DEFAULT_THRESHOLDS) {
+  const mild = thresholds.mildDrawdown ?? -12;
+  return state.drawdownPct <= mild && !isDeepDrawdown(state, thresholds);
+}
+
 function signalGroups(state, thresholds = DEFAULT_THRESHOLDS) {
   const lowSignals = {
-    valuationCheap: state.capePercentile < thresholds.cheapCape,
-    deepDrawdown: state.drawdownPct <= thresholds.deepDrawdown,
+    valuationCheap: isValuationCheap(state, thresholds),
+    deepDrawdown: isDeepDrawdown(state, thresholds),
     panicVix: state.vixAvailable !== false && state.vix >= thresholds.panicVix,
+  };
+  // Mild drawdown is an extra buy-leaning cue, not one of the three core lows.
+  // It upgrades a zero-low month into smallDipBuy without diluting bottomAttack.
+  const softSignals = {
+    mildDrawdown: isMildDrawdown(state, thresholds),
   };
   const defensiveFlags = {
     valuationHigh: state.capePercentile >= thresholds.highCape,
@@ -344,13 +376,24 @@ function signalGroups(state, thresholds = DEFAULT_THRESHOLDS) {
     fastCrash: state.crash25dPct <= thresholds.fastCrash,
     quietVix: state.vixAvailable !== false && state.vix <= thresholds.quietVix,
   };
-  return { lowSignals, defensiveFlags, lowSignalCount: Object.values(lowSignals).filter(Boolean).length };
+  return {
+    lowSignals,
+    softSignals,
+    defensiveFlags,
+    lowSignalCount: Object.values(lowSignals).filter(Boolean).length,
+  };
+}
+
+function isHeatRegime(defensiveFlags) {
+  // Quiet VIX alone is not "heat". Complacency is a caution chip, not a sell/pause trigger.
+  // Heat requires bubble-level CAPE so trim/pause do not fire through ordinary calm bulls.
+  return Boolean(defensiveFlags.bubbleWatch);
 }
 
 function advanceSignalMonth(memory, state, month, thresholds = DEFAULT_THRESHOLDS) {
   if (memory.month === month) return memory;
   const { defensiveFlags } = signalGroups(state, thresholds);
-  const isHeat = defensiveFlags.bubbleWatch || defensiveFlags.quietVix;
+  const isHeat = isHeatRegime(defensiveFlags);
   return {
     ...memory,
     month,
@@ -384,34 +427,91 @@ function normalizeMonthly(rawMonthly = 1000) {
 }
 
 function calculateDecision(state, memory = {}, thresholds = DEFAULT_THRESHOLDS) {
-  const { lowSignals, defensiveFlags, lowSignalCount } = signalGroups(state, thresholds);
-  const isHeat = defensiveFlags.bubbleWatch || defensiveFlags.quietVix;
+  const { lowSignals, softSignals, defensiveFlags, lowSignalCount } = signalGroups(state, thresholds);
+  const isHeat = isHeatRegime(defensiveFlags);
   const heatMonths = memory.heatMonths || 0;
   const rampMonths = memory.rampMonths || 0;
   let key = "normalDca";
+  let reason = "noSpecialRule";
 
+  // Priority is buy-leaning before pure crash sells. A single low signal means the
+  // market is already discounted enough that forced TQQQ liquidation is usually wrong
+  // (April 2020 first-day sampling used to sell on panic alone).
   if (lowSignalCount >= 2) {
     key = "bottomAttack";
-  } else if (defensiveFlags.fastCrash) {
-    key = "crashDefense";
+    reason = "lowSignalConvergence";
   } else if (rampMonths > 0) {
     key = "rampTqqq";
-  } else if (lowSignalCount === 1) {
+    reason = "postBottomRamp";
+  } else if (lowSignalCount === 1 || softSignals.mildDrawdown) {
     key = "smallDipBuy";
+    reason = lowSignalCount === 1 ? "singleLowSignal" : "mildDrawdown";
+  } else if (defensiveFlags.fastCrash) {
+    key = "crashDefense";
+    reason = "fastCrashNoDiscount";
   } else if (isHeat && heatMonths >= 6) {
     key = "trimHeat";
+    reason = "sustainedBubbleHeat";
   } else if ((defensiveFlags.valuationHigh && defensiveFlags.nearHigh) || isHeat) {
     key = "pauseAtHigh";
+    reason = isHeat ? "bubbleWatch" : "expensiveNearHigh";
   }
 
   return {
     key,
+    reason,
     lowSignalCount,
     lowSignals,
+    softSignals,
     defensiveFlags,
     heatMonths,
     rampMonths,
   };
+}
+
+function decisionConfidence(decision, state = {}) {
+  const near = (value, threshold, width) => Math.abs(value - threshold) <= width;
+  const borderline = (
+    near(state.capePercentile ?? 50, DEFAULT_THRESHOLDS.cheapCape, 3)
+    || near(state.drawdownPct ?? 0, DEFAULT_THRESHOLDS.deepDrawdown, 2)
+    || near(state.drawdownPct ?? 0, DEFAULT_THRESHOLDS.mildDrawdown, 1.5)
+    || near(state.vix ?? 20, DEFAULT_THRESHOLDS.panicVix, 2)
+    || near(state.crash25dPct ?? 0, DEFAULT_THRESHOLDS.fastCrash, 1.5)
+  );
+  if (decision.key === "bottomAttack" && decision.lowSignalCount >= 3) {
+    return { level: "high", score: 0.92, note: "threeLowSignals" };
+  }
+  if (decision.key === "bottomAttack") {
+    return { level: borderline ? "medium" : "high", score: borderline ? 0.72 : 0.86, note: "twoLowSignals" };
+  }
+  if (decision.key === "crashDefense" || decision.key === "trimHeat") {
+    return { level: borderline ? "medium" : "high", score: borderline ? 0.68 : 0.8, note: decision.key };
+  }
+  if (decision.key === "smallDipBuy" || decision.key === "pauseAtHigh" || decision.key === "rampTqqq") {
+    return { level: borderline ? "low" : "medium", score: borderline ? 0.48 : 0.64, note: decision.key };
+  }
+  return { level: borderline ? "low" : "medium", score: borderline ? 0.42 : 0.58, note: "normalDca" };
+}
+
+function actionSeverity(key) {
+  const rank = {
+    bottomAttack: 6,
+    rampTqqq: 5,
+    smallDipBuy: 4,
+    normalDca: 3,
+    pauseAtHigh: 2,
+    trimHeat: 1,
+    crashDefense: 0,
+  };
+  return rank[key] ?? 3;
+}
+
+function isBuyLeanAction(key) {
+  return key === "bottomAttack" || key === "rampTqqq" || key === "smallDipBuy" || key === "normalDca";
+}
+
+function isRiskAction(key) {
+  return key === "crashDefense" || key === "trimHeat";
 }
 
 function memoryAfterAction(memory, decision) {
@@ -451,6 +551,85 @@ function buildDataQuality(data, prices = []) {
   };
 }
 
+function buildMonthlyDecisionLog(prices, nasdaq, vix, capeChrono, states, thresholds = DEFAULT_THRESHOLDS, limit = 18) {
+  let memory = { heatMonths: 0, rampMonths: 0, month: "" };
+  let lastMonth = "";
+  let monthAction = null;
+  let monthAnchorDate = null;
+  let monthAnchorDecision = null;
+  let upgraded = false;
+  const months = [];
+
+  for (let i = 30; i < prices.length; i += 1) {
+    const price = prices[i];
+    const month = price.date.slice(0, 7);
+    const state = states?.[i];
+    if (!state) continue;
+
+    if (month !== lastMonth) {
+      if (lastMonth && monthAction) {
+        months.push({
+          month: lastMonth,
+          date: monthAnchorDate,
+          key: monthAction,
+          lockedKey: monthAnchorDecision?.key || monthAction,
+          upgraded,
+          lowSignalCount: monthAnchorDecision?.lowSignalCount ?? null,
+        });
+      }
+      lastMonth = month;
+      monthAction = null;
+      monthAnchorDate = price.date;
+      monthAnchorDecision = null;
+      upgraded = false;
+      memory = advanceSignalMonth(memory, state, month, thresholds);
+      const decision = calculateDecision(state, memory, thresholds);
+      monthAnchorDecision = decision;
+      monthAction = decision.key;
+      memory = memoryAfterAction(memory, decision);
+    } else {
+      memory = advanceSignalMonth(memory, state, month, thresholds);
+      const live = calculateDecision(state, memory, thresholds);
+      if (shouldUpgradeMonthAction(monthAction, live.key)) {
+        monthAction = live.key;
+        upgraded = true;
+        memory = memoryAfterAction(memory, live);
+      }
+    }
+  }
+  if (lastMonth && monthAction) {
+    months.push({
+      month: lastMonth,
+      date: monthAnchorDate,
+      key: monthAction,
+      lockedKey: monthAnchorDecision?.key || monthAction,
+      upgraded,
+      lowSignalCount: monthAnchorDecision?.lowSignalCount ?? null,
+    });
+  }
+  return months.slice(-limit);
+}
+
+function shouldUpgradeMonthAction(currentKey, liveKey) {
+  if (!currentKey || currentKey === liveKey) return false;
+  // Only allow upgrades that are more buy-leaning after the month opens, or a pure
+  // risk cut when the month started with no discount. Never flip buy → sell mid-month
+  // after a discount signal already fired.
+  if (liveKey === "bottomAttack" && currentKey !== "bottomAttack") return true;
+  if (liveKey === "smallDipBuy" && (currentKey === "normalDca" || currentKey === "pauseAtHigh" || currentKey === "trimHeat")) return true;
+  if (liveKey === "crashDefense" && currentKey === "normalDca") return true;
+  if (liveKey === "crashDefense" && currentKey === "pauseAtHigh") return true;
+  if (liveKey === "rampTqqq" && actionSeverity(liveKey) > actionSeverity(currentKey)) return true;
+  return false;
+}
+
+function firstIndexOfMonth(prices, month) {
+  for (let i = 0; i < prices.length; i += 1) {
+    if (prices[i].date.slice(0, 7) === month) return i;
+  }
+  return -1;
+}
+
 async function marketSnapshot() {
   const data = await loadData();
   const { nasdaq, qqq, tqqq, vix, rates, capeLatestFirst, staleSources } = data;
@@ -466,15 +645,66 @@ async function marketSnapshot() {
   const capeChrono = [...capeLatestFirst].reverse();
   const states = buildStates(prices, nasdaq, vix, capeChrono);
   const currentMonth = prices.at(-1).date.slice(0, 7);
-  const memory = replayDecisionMemory(prices, nasdaq, vix, capeChrono, currentMonth, DEFAULT_THRESHOLDS, states);
+  const monthStartIndex = firstIndexOfMonth(prices, currentMonth);
+  const memoryBeforeMonth = replayDecisionMemory(prices, nasdaq, vix, capeChrono, currentMonth, DEFAULT_THRESHOLDS, states);
+  const monthStartState = states[monthStartIndex] || states.at(-1);
+  const monthStartMemory = advanceSignalMonth(memoryBeforeMonth, monthStartState, currentMonth, DEFAULT_THRESHOLDS);
+  const lockedDecision = calculateDecision(monthStartState, monthStartMemory, DEFAULT_THRESHOLDS);
   const currentState = states.at(-1);
-  const decision = calculateDecision(currentState, memory);
+  // Replay through current month with upgrades so live memory matches engine path.
+  let liveMemory = { ...monthStartMemory };
+  let effectiveKey = lockedDecision.key;
+  let upgraded = false;
+  for (let i = monthStartIndex; i < prices.length; i += 1) {
+    const state = states[i];
+    if (!state) continue;
+    liveMemory = advanceSignalMonth(liveMemory, state, currentMonth, DEFAULT_THRESHOLDS);
+    const live = calculateDecision(state, liveMemory, DEFAULT_THRESHOLDS);
+    if (i === monthStartIndex) {
+      effectiveKey = live.key;
+      liveMemory = memoryAfterAction(liveMemory, live);
+      continue;
+    }
+    if (shouldUpgradeMonthAction(effectiveKey, live.key)) {
+      effectiveKey = live.key;
+      upgraded = true;
+      liveMemory = memoryAfterAction(liveMemory, live);
+    }
+  }
+  const liveDecision = calculateDecision(currentState, liveMemory, DEFAULT_THRESHOLDS);
+  const decision = {
+    ...liveDecision,
+    key: effectiveKey,
+    lockedKey: lockedDecision.key,
+    liveKey: liveDecision.key,
+    upgraded,
+    month: currentMonth,
+    asOf: prices.at(-1).date,
+    lockedDate: prices[monthStartIndex]?.date || prices.at(-1).date,
+    confidence: decisionConfidence({ ...liveDecision, key: effectiveKey }, currentState),
+    thresholds: {
+      cheapCape: DEFAULT_THRESHOLDS.cheapCape,
+      deepDrawdown: DEFAULT_THRESHOLDS.deepDrawdown,
+      mildDrawdown: DEFAULT_THRESHOLDS.mildDrawdown,
+      panicVix: DEFAULT_THRESHOLDS.panicVix,
+      fastCrash: DEFAULT_THRESHOLDS.fastCrash,
+      highCape: DEFAULT_THRESHOLDS.highCape,
+      bubbleCape: DEFAULT_THRESHOLDS.bubbleCape,
+    },
+  };
   const rollingHigh = currentIndex / (1 + currentState.drawdownPct / 100);
+  const decisionHistory = buildMonthlyDecisionLog(prices, nasdaq, vix, capeChrono, states, DEFAULT_THRESHOLDS, 18);
 
   return {
     generatedAt: new Date().toISOString(),
     staleSources,
     dataQuality: buildDataQuality(data, prices),
+    cadence: {
+      mode: "monthlyContributionWithIntraMonthUpgrades",
+      contribution: "firstTradingDay",
+      upgrades: "bottomAttack/smallDipBuy/crashDefense can upgrade later in the month",
+      note: "Live panel shows the effective month action. Locked is first trading day. Live preview is today's re-evaluation.",
+    },
     indicators: {
       cape: {
         date: latestCape.label,
@@ -509,6 +739,19 @@ async function marketSnapshot() {
       },
     },
     decision,
+    lockedDecision: {
+      ...lockedDecision,
+      confidence: decisionConfidence(lockedDecision, monthStartState),
+      date: prices[monthStartIndex]?.date || null,
+      month: currentMonth,
+    },
+    liveDecision: {
+      ...liveDecision,
+      confidence: decisionConfidence(liveDecision, currentState),
+      date: prices.at(-1).date,
+      month: currentMonth,
+    },
+    decisionHistory,
   };
 }
 
@@ -782,20 +1025,23 @@ function replayDecisionMemory(prices, nasdaq, vix, capeChrono, beforeMonth, thre
   let memory = { heatMonths: 0, rampMonths: 0, month: "" };
   const capeCursor = { index: 0 };
   let lastMonth = "";
-  let executedThisMonth = false;
+  let monthAction = null;
   for (let i = 30; i < prices.length; i += 1) {
     const price = prices[i];
     const month = price.date.slice(0, 7);
     if (month >= beforeMonth) break;
     if (month !== lastMonth) {
       lastMonth = month;
-      executedThisMonth = false;
+      monthAction = null;
     }
     const state = states?.[i] || stateAt(i, price, nasdaq, vix, capeChrono, capeCursor);
     memory = advanceSignalMonth(memory, state, month, thresholds);
     const decision = calculateDecision(state, memory, thresholds);
-    if (!executedThisMonth) {
-      executedThisMonth = true;
+    if (monthAction == null) {
+      monthAction = decision.key;
+      memory = memoryAfterAction(memory, decision);
+    } else if (shouldUpgradeMonthAction(monthAction, decision.key)) {
+      monthAction = decision.key;
       memory = memoryAfterAction(memory, decision);
     }
   }
@@ -804,7 +1050,11 @@ function replayDecisionMemory(prices, nasdaq, vix, capeChrono, beforeMonth, thre
 
 function applySignalAction(portfolio, decision, prices, monthlyAmount) {
   if (decision.key === "bottomAttack") {
-    buyTQQQ(portfolio, portfolio.cash / 3, prices.tqqq);
+    // Seed TQQQ from cash first. If cash was already spent earlier in the month
+    // (common on mid-month upgrades), rotate a slice of QQQ so the attack is not a no-op.
+    const cashSeed = portfolio.cash / 3;
+    buyTQQQ(portfolio, cashSeed, prices.tqqq);
+    buyTQQQToTarget(portfolio, 0.35, prices, 0.25, portfolio.cash);
   } else if (decision.key === "crashDefense") {
     sellTQQQ(portfolio, 0.5, prices.tqqq);
   } else if (decision.key === "rampTqqq") {
@@ -860,21 +1110,65 @@ function actionCountsFromStats(actionStats) {
   return Object.fromEntries(ACTION_KEYS.map((key) => [key, actionStats[key]?.count || 0]));
 }
 
+function relativeEdge(candidatePoints, benchmarkPoints) {
+  if (!candidatePoints?.length || !benchmarkPoints?.length) return null;
+  const n = Math.min(candidatePoints.length, benchmarkPoints.length);
+  let underMonths = 0;
+  let worstRelative = 0;
+  let relativePeak = 1;
+  let worstRelativeDrawdown = 0;
+  for (let i = 0; i < n; i += 1) {
+    const cNav = candidatePoints[i].nav;
+    const bNav = benchmarkPoints[i].nav;
+    if (!(cNav > 0 && bNav > 0)) continue;
+    const rel = cNav / bNav;
+    if (i > 0) {
+      const cRet = cNav / candidatePoints[i - 1].nav - 1;
+      const bRet = bNav / benchmarkPoints[i - 1].nav - 1;
+      if (cRet < bRet) underMonths += 1;
+    }
+    worstRelative = Math.min(worstRelative, rel - 1);
+    relativePeak = Math.max(relativePeak, rel);
+    worstRelativeDrawdown = Math.min(worstRelativeDrawdown, rel / relativePeak - 1);
+  }
+  const lastC = candidatePoints[n - 1];
+  const lastB = benchmarkPoints[n - 1];
+  return {
+    months: n,
+    underperformanceMonths: underMonths,
+    underperformanceRate: n > 1 ? underMonths / (n - 1) : null,
+    finalRelativeMultiple: lastB.value > 0 ? lastC.value / lastB.value : null,
+    finalRelativeNav: lastB.nav > 0 ? lastC.nav / lastB.nav : null,
+    worstRelativeGap: worstRelative,
+    maxRelativeDrawdown: worstRelativeDrawdown,
+  };
+}
+
 function summarizePortfolios(portfolios, finalPrices, actionStats) {
+  const qqqPoints = portfolios.qqq?.points || [];
   return Object.entries(portfolios).map(([key, portfolio]) => {
     const finalValue = valueOf(portfolio, finalPrices);
     const finalTime = new Date(`${finalPrices.date}T00:00:00Z`).getTime();
     const flows = [...portfolio.flows, { time: finalTime, amount: finalValue }];
     const signalLike = key.startsWith("signal");
+    const risk = riskStats(portfolio.points);
+    const multiple = portfolio.contributed > 0 ? finalValue / portfolio.contributed : null;
+    const vsQqq = key === "qqq" ? null : relativeEdge(portfolio.points, qqqPoints);
     return {
       key,
       finalValue,
       contributed: portfolio.contributed,
-      multiple: portfolio.contributed > 0 ? finalValue / portfolio.contributed : null,
+      multiple,
       irr: xirr(flows),
       maxDrawdown: portfolio.maxDrawdown,
       regression: regression(portfolio.points),
-      risk: riskStats(portfolio.points),
+      risk,
+      calmar: portfolio.maxDrawdown < 0 && Number.isFinite(risk?.sharpe)
+        ? (multiple != null && portfolio.points.at(-1)?.year > 0
+          ? ((multiple ** (1 / portfolio.points.at(-1).year)) - 1) / Math.abs(portfolio.maxDrawdown)
+          : null)
+        : null,
+      vsQqq,
       points: portfolio.points,
       actionCounts: signalLike ? actionCountsFromStats(actionStats) : undefined,
       actionStats: key === "signal" ? actionStats : undefined,
@@ -966,6 +1260,19 @@ function thresholdVariants() {
   return variants;
 }
 
+function trainScore(portfolios, finalPrices) {
+  const signal = portfolios.signal;
+  const qqq = portfolios.qqq;
+  const signalValue = valueOf(signal, finalPrices);
+  const qqqValue = valueOf(qqq, finalPrices);
+  const signalRisk = riskStats(signal.points);
+  const excess = qqqValue > 0 ? signalValue / qqqValue : 1;
+  // Prefer risk-adjusted excess over raw terminal wealth to reduce bull-market overfitting.
+  const sharpe = signalRisk.sharpe == null ? 0 : signalRisk.sharpe;
+  const ddPenalty = 1 + Math.abs(signal.maxDrawdown || 0);
+  return (excess * (1 + Math.max(0, sharpe))) / ddPenalty;
+}
+
 function walkForward(data, startDate, monthlyAmount, states) {
   const latest = (data.prices || []).at(-1)?.date;
   if (!latest) return [];
@@ -973,10 +1280,12 @@ function walkForward(data, startDate, monthlyAmount, states) {
     let best = null;
     for (const thresholds of thresholdVariants()) {
       const result = runBacktest(data, startDate, monthlyAmount, thresholds, states, split);
+      const score = trainScore(result.portfolios, result.finalPrices);
       const finalValue = valueOf(result.portfolios.signal, result.finalPrices);
-      if (!best || finalValue > best.trainFinalValue) {
+      if (!best || score > best.trainScore) {
         best = {
           thresholds,
+          trainScore: score,
           trainFinalValue: finalValue,
           trainBottomAttackCount: result.actionCounts.bottomAttack,
         };
@@ -984,6 +1293,10 @@ function walkForward(data, startDate, monthlyAmount, states) {
     }
     const bestForward = runBacktest(data, split, monthlyAmount, best.thresholds, states);
     const defaultForward = runBacktest(data, split, monthlyAmount, DEFAULT_THRESHOLDS, states);
+    const bestSignal = valueOf(bestForward.portfolios.signal, bestForward.finalPrices);
+    const bestQqq = valueOf(bestForward.portfolios.qqq, bestForward.finalPrices);
+    const defaultSignal = valueOf(defaultForward.portfolios.signal, defaultForward.finalPrices);
+    const defaultQqq = valueOf(defaultForward.portfolios.qqq, defaultForward.finalPrices);
     return {
       split,
       trainStart: startDate,
@@ -995,9 +1308,12 @@ function walkForward(data, startDate, monthlyAmount, states) {
         panicVix: best.thresholds.panicVix,
       },
       trainFinalValue: best.trainFinalValue,
+      trainScore: best.trainScore,
       trainBottomAttackCount: best.trainBottomAttackCount,
-      validationFinalValue: valueOf(bestForward.portfolios.signal, bestForward.finalPrices),
-      defaultValidationFinalValue: valueOf(defaultForward.portfolios.signal, defaultForward.finalPrices),
+      validationFinalValue: bestSignal,
+      defaultValidationFinalValue: defaultSignal,
+      validationVsQqq: bestQqq > 0 ? bestSignal / bestQqq : null,
+      defaultValidationVsQqq: defaultQqq > 0 ? defaultSignal / defaultQqq : null,
       validationBottomAttackCount: bestForward.actionCounts.bottomAttack,
     };
   });
@@ -1031,6 +1347,7 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
     const signalValue = valueOf(portfolios.signal, previousPrice);
     const attributionKey = monthAction || "normalDca";
     if (lastSignalRecordedValue != null && actionStats[attributionKey]) {
+      // Rough path attribution only. Includes market beta; not causal alpha.
       actionStats[attributionKey].estimatedPnL += signalValue - lastSignalRecordedValue - monthlyAmount;
     }
     lastSignalRecordedValue = signalValue;
@@ -1076,6 +1393,16 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
       signalMemory = memoryAfterAction(signalMemory, decision);
       monthAction = decision.key;
       actionStats[decision.key].count += 1;
+    } else if (shouldUpgradeMonthAction(monthAction, decision.key)) {
+      // Intra-month upgrade: catch mid-month crashes/bottoms that first-day sampling misses.
+      // Only apply the upgraded action once per upgrade step.
+      applySignalAction(portfolios.signal, decision, price, monthlyAmount);
+      applySignalQqqAction(portfolios.signalQqq, decision, price, monthlyAmount);
+      applySignalTqqqAction(portfolios.signalTqqq, decision, price, monthlyAmount);
+      signalMemory = memoryAfterAction(signalMemory, decision);
+      if (actionStats[monthAction]) actionStats[monthAction].count = Math.max(0, actionStats[monthAction].count - 1);
+      monthAction = decision.key;
+      actionStats[decision.key].count += 1;
     }
 
     for (const portfolio of Object.values(portfolios)) {
@@ -1099,6 +1426,7 @@ async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
   const states = buildStates(prices, data.nasdaq, data.vix, capeChrono);
   const { finalPrices, portfolios, actionStats } = runBacktest(data, startDate, monthlyAmount, DEFAULT_THRESHOLDS, states);
   const strategies = summarizePortfolios(portfolios, finalPrices, actionStats);
+  const byKey = Object.fromEntries(strategies.map((strategy) => [strategy.key, strategy]));
   return {
     generatedAt: new Date().toISOString(),
     start: startDate,
@@ -1106,12 +1434,28 @@ async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
     staleSources: data.staleSources,
     end: finalPrices.date,
     dataQuality: buildDataQuality(data, prices),
+    thresholds: DEFAULT_THRESHOLDS,
+    headline: {
+      signalVsQqq: byKey.signal?.vsQqq || null,
+      signalMultiple: byKey.signal?.multiple ?? null,
+      qqqMultiple: byKey.qqq?.multiple ?? null,
+      signalMaxDrawdown: byKey.signal?.maxDrawdown ?? null,
+      qqqMaxDrawdown: byKey.qqq?.maxDrawdown ?? null,
+      signalIrr: byKey.signal?.irr ?? null,
+      qqqIrr: byKey.qqq?.irr ?? null,
+      bottomAttackCount: byKey.signal?.actionCounts?.bottomAttack ?? 0,
+      pauseMonths: (byKey.signal?.actionCounts?.pauseAtHigh || 0) + (byKey.signal?.actionCounts?.trimHeat || 0),
+    },
     modelNotes: {
-      cape: `CAPE percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window.`,
-      drawdown: `Drawdown uses a rolling ${ROLLING_HIGH_DAYS / 252}-year high of 5-day Nasdaq-100 averages.`,
+      cape: `CAPE is S&P 500 Shiller PE, not Nasdaq-100 PE. Percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window. Cheap fires below the ${DEFAULT_THRESHOLDS.cheapCape}th percentile, or below the ${DEFAULT_THRESHOLDS.supportCape}th percentile when Nasdaq-100 is down ${Math.abs(DEFAULT_THRESHOLDS.supportDrawdown)}%+.`,
+      drawdown: `Drawdown uses a rolling ${ROLLING_HIGH_DAYS / 252}-year high of 5-day Nasdaq-100 averages. Deep <= ${DEFAULT_THRESHOLDS.deepDrawdown}%, mild <= ${DEFAULT_THRESHOLDS.mildDrawdown}%.`,
+      vix: `VIX is S&P 500 implied vol, used as a cross-asset panic proxy. Panic threshold is ${DEFAULT_THRESHOLDS.panicVix} on the 5-day average.`,
+      cadence: "Monthly cash is contributed on the first trading day. Intra-month upgrades can raise the action to small-dip buy, bottom attack, or crash defense if conditions worsen after the open.",
       costs: "QQQ/TQQQ use adjusted ETF closes when available; older pre-inception sections are synthetic. Synthetic QQQ adds a 0.7% dividend proxy. Synthetic TQQQ deducts 0.95% expense ratio plus approximate 2x financing cost. Cash earns FEDFUNDS when available, otherwise a coarse historical short-rate approximation.",
       tqqqHoldingCosts: "Buying TQQQ shares with cash does not create daily broker margin calls. Fund leverage, derivatives, financing, fees, compounding, and tracking effects are embedded in actual adjusted TQQQ closes after inception and approximated in synthetic pre-inception data. Broker margin interest is excluded and should be added separately if TQQQ is bought with borrowed money.",
       wrappers: "Tactical QQQ and tactical TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash.",
+      limits: "No taxes, no slippage, no tracking-error residual after inception, no broker constraints. Attribution is path-linked, not causal. Past edge versus QQQ DCA is not a guarantee of future edge.",
+      notAdvice: "This dashboard is a research and process tool, not investment advice.",
     },
     strategies,
     sensitivity: sensitivityGrid(data, startDate, monthlyAmount, states),
@@ -1123,6 +1467,8 @@ async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
 module.exports = {
   backtest,
   calculateDecision,
+  decisionConfidence,
+  DEFAULT_THRESHOLDS,
   fetchText,
   loadData,
   marketSnapshot,
@@ -1130,4 +1476,5 @@ module.exports = {
   fetchFredSeries,
   fetchYahooSeries,
   sendJson,
+  signalGroups,
 };

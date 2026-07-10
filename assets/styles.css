@@ -264,11 +264,62 @@ h2 {
 
 .decision-panel {
   display: grid;
-  grid-template-columns: minmax(210px, .42fr) minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, .7fr);
+  gap: 18px;
   margin-top: 20px;
   padding: 20px;
   border-left: 6px solid var(--decision-color, var(--blue));
+}
+
+.decision-main {
+  min-width: 0;
+}
+
+.decision-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.confidence-pill {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  white-space: nowrap;
+}
+
+.confidence-pill span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.confidence-pill strong {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.confidence-pill[data-level="high"] {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.confidence-pill[data-level="medium"] {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+.confidence-pill[data-level="low"] {
+  border-color: #fca5a5;
+  background: #fef2f2;
 }
 
 .operation {
@@ -276,6 +327,88 @@ h2 {
   font-size: 18px;
   line-height: 1.5;
   font-weight: 650;
+}
+
+.cadence-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+
+.cadence-row div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfe;
+}
+
+.cadence-row span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.cadence-row strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.edge-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+
+.edge-card strong#edgeMultiple {
+  display: block;
+  margin: 6px 0 8px;
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--violet);
+}
+
+.edge-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.edge-stats div {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.edge-stats span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.edge-stats strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.disclaimer {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px dashed #d0d5dd;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .chips {
@@ -300,6 +433,7 @@ h2 {
   background: #fff1b8;
 }
 
+.history-panel,
 .method-panel,
 .actions-panel,
 .guide-panel,
@@ -307,6 +441,91 @@ h2 {
 .sources-panel {
   margin-top: 16px;
   padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.collapsible-panel > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.collapsible-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-panel > summary.section-head {
+  margin-bottom: 0;
+}
+
+.collapsible-panel[open] > summary.section-head {
+  margin-bottom: 16px;
+}
+
+.collapsible-panel > summary h2::after {
+  content: " +";
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.collapsible-panel[open] > summary h2::after {
+  content: " −";
+}
+
+.decision-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--action-color, var(--line));
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: #fbfcfe;
+  min-width: 132px;
+}
+
+.history-chip.upgraded {
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+
+.history-month {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 820;
+}
+
+.history-chip strong {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.history-chip em {
+  color: #c2410c;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .backtest-panel {
@@ -1214,8 +1433,17 @@ canvas {
 @media (max-width: 860px) {
   .topbar,
   .split,
-  .decision-panel {
+  .decision-panel,
+  .decision-title-row {
     display: block;
+  }
+  .confidence-pill {
+    align-items: flex-start;
+    margin-top: 10px;
+  }
+  .cadence-row,
+  .edge-stats {
+    grid-template-columns: 1fr;
   }
   .compact {
     margin-top: 16px;

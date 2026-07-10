@@ -25,16 +25,35 @@
     <div id="error" class="error" hidden></div>
 
     <section id="decisionPanel" class="decision-panel">
-      <div>
-        <p id="decisionKicker" class="eyebrow">建议操作</p>
-        <h2 id="action">加载中</h2>
-      </div>
-      <div>
+      <div class="decision-main">
+        <div class="decision-title-row">
+          <div>
+            <p id="decisionKicker" class="eyebrow">本月有效动作</p>
+            <h2 id="action">加载中</h2>
+          </div>
+          <div id="confidencePill" class="confidence-pill" hidden>
+            <span id="confidenceLabel">置信度</span>
+            <strong id="confidenceValue">--</strong>
+          </div>
+        </div>
         <p id="operation" class="operation">正在拉取市场数据。</p>
         <p id="risk" class="muted"></p>
+        <div id="cadenceRow" class="cadence-row" hidden>
+          <div><span id="lockedLabel">月初锁定</span><strong id="lockedValue">--</strong></div>
+          <div><span id="liveLabel">今日预览</span><strong id="liveValue">--</strong></div>
+          <div><span id="upgradeLabel">月内升级</span><strong id="upgradeValue">--</strong></div>
+        </div>
         <div id="chips" class="chips"></div>
       </div>
+      <aside id="edgeCard" class="edge-card" hidden>
+        <p id="edgeKicker" class="eyebrow">相对 QQQ 定投</p>
+        <strong id="edgeMultiple">--</strong>
+        <p id="edgeNote" class="muted"></p>
+        <div id="edgeStats" class="edge-stats"></div>
+      </aside>
     </section>
+
+    <p id="disclaimer" class="disclaimer"></p>
 
     <section class="market-grid" aria-live="polite">
       <article class="tile">
@@ -75,31 +94,40 @@
       </article>
     </section>
 
-    <section class="method-panel">
+    <section class="history-panel">
       <div class="section-head">
-        <p id="methodKicker" class="eyebrow">计算方法</p>
-        <h2 id="methodTitle">三类信号，每日判断、按月入金</h2>
+        <p id="historyKicker" class="eyebrow">动作轨迹</p>
+        <h2 id="historyTitle">近月有效动作</h2>
+        <p id="historyNote" class="muted"></p>
       </div>
-      <div id="methods" class="method-grid"></div>
-    </section>
-
-    <section class="actions-panel">
-      <div class="section-head">
-        <p id="actionCatalogKicker" class="eyebrow">动作清单</p>
-        <h2 id="actionCatalogTitle">三信号策略会做什么</h2>
-        <p id="actionCatalogNote" class="muted"></p>
-      </div>
-      <div id="actionCatalog" class="action-grid"></div>
+      <div id="decisionHistory" class="decision-history"></div>
     </section>
 
     <section class="guide-panel">
       <div class="section-head">
         <p id="guideKicker" class="eyebrow">执行框架</p>
-        <h2 id="guideTitle">同一组三信号，三种用法</h2>
+        <h2 id="guideTitle">同一组三信号，两张单标的参考卡</h2>
         <p id="guideNote" class="muted"></p>
       </div>
       <div id="executionGuides" class="guide-grid"></div>
     </section>
+
+    <details class="method-panel collapsible-panel">
+      <summary class="section-head">
+        <p id="methodKicker" class="eyebrow">计算方法</p>
+        <h2 id="methodTitle">三类信号，月初入金、月内可升级</h2>
+      </summary>
+      <div id="methods" class="method-grid"></div>
+    </details>
+
+    <details class="actions-panel collapsible-panel">
+      <summary class="section-head">
+        <p id="actionCatalogKicker" class="eyebrow">动作清单</p>
+        <h2 id="actionCatalogTitle">三信号策略会做什么</h2>
+        <p id="actionCatalogNote" class="muted"></p>
+      </summary>
+      <div id="actionCatalog" class="action-grid"></div>
+    </details>
 
     <section class="backtest-panel">
       <div class="section-head split">

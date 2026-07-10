@@ -28,10 +28,31 @@ const copy = {
   zh: {
     eyebrow: "QQQ / TQQQ",
     title: "纳指三信号仪表盘",
-    subtitle: "用估值、回撤和波动率决定本月买 QQQ、买 TQQQ、暂停，还是减 TQQQ。",
-    decisionKicker: "建议操作",
+    subtitle: "用估值、回撤和波动率，决定本月买 QQQ、买 TQQQ、暂停，还是减 TQQQ。面向月度定投流程，不是日内交易系统。",
+    decisionKicker: "本月有效动作",
     loadingAction: "加载中",
     loadingOperation: "正在拉取市场数据。",
+    confidenceLabel: "置信度",
+    confidenceLevels: { high: "高", medium: "中", low: "低" },
+    lockedLabel: "月初锁定",
+    liveLabel: "今日预览",
+    upgradeLabel: "月内升级",
+    upgradeYes: "是",
+    upgradeNo: "否",
+    edgeKicker: "相对 QQQ 定投",
+    edgeEmpty: "回测加载后显示历史相对优势。",
+    edgeNote: (h) => `同起点同月投入下，三信号期末约为 QQQ 定投的 ${fmtNumber(h.signalVsQqq?.finalRelativeMultiple || 0, 2)} 倍。最大回撤 ${fmtPct((h.signalMaxDrawdown || 0) * 100)}，QQQ 定投 ${fmtPct((h.qqqMaxDrawdown || 0) * 100)}。`,
+    edgeStats: {
+      multiple: "相对倍数",
+      under: "跑输月份占比",
+      irrGap: "IRR 差",
+      bottoms: "大底次数",
+    },
+    disclaimer: "研究与流程工具，不是投资建议。不含税负、滑点、跟踪误差残差。历史相对 QQQ 的优势不保证未来重复。TQQQ 有大幅回撤与归零路径风险。",
+    historyKicker: "动作轨迹",
+    historyTitle: "近月有效动作",
+    historyNote: "绿色/红点表示月内发生过动作升级。策略按月初入金，危机月允许升级到更强买点或风控。",
+    upgradedMark: "升",
     capeLabel: "CAPE 分位",
     ddLabel: "纳指 100 回撤",
     vixLabel: "VIX 5 日均值",
@@ -45,19 +66,20 @@ const copy = {
       expensive: "高估",
       neutral: "中性",
       deep: "深跌",
+      mild: "浅跌",
       fastCrash: "快崩",
       normal: "常态",
       panic: "恐慌",
       lowVol: "低波动",
     },
     methodKicker: "计算方法",
-    methodTitle: "三类信号，每日判断、按月入金",
+    methodTitle: "三类信号，月初入金、月内可升级",
     actionCatalogKicker: "动作清单",
     actionCatalogTitle: "三信号策略会做什么",
-    actionCatalogNote: "三信号策略按低位、快崩、高位、常态四类规则处理。快崩、过热、高位暂停时，当月新增资金不买 QQQ/TQQQ，留现金；QQQ/TQQQ 定投只按月买入，不卖出。",
+    actionCatalogNote: "优先级：大底 > 大底后加速 > 小底 > 快崩风控 > 过热锁利 > 高位暂停 > 正常定投。快崩只在没有折扣信号时卖出。单纯低波动不再触发暂停。",
     guideKicker: "执行框架",
     guideTitle: "同一组三信号，两张单标的参考卡",
-    guideNote: "下面只展示战术 QQQ 和战术 TQQQ。它们是单标的参考模块，不改变顶部三信号 QQQ/TQQQ 主策略建议。",
+    guideNote: "战术 QQQ / 战术 TQQQ 是单标的参考，不改变顶部混合策略建议。回测里战术 QQQ 常略逊于纯 QQQ 定投，因为它用暂停和减仓换更低回撤。",
     guideStatsFinal: "期末资产",
     guideStatsDrawdown: "最大回撤",
     guideReferenceNote: "参考用法，不改变顶部三信号 QQQ/TQQQ 主策略建议。",
@@ -71,7 +93,7 @@ const copy = {
     scaleLabel: "对数纵轴",
     qqqAxisLabel: "右轴显示 QQQ 价格",
     actionMarkersLabel: "浮窗显示月度动作",
-    backtestNote: "回测固定为每月投入 $1,000。图表展示 QQQ 定投、战术 QQQ、TQQQ 定投、战术 TQQQ、三信号 QQQ/TQQQ 策略。QQQ/TQQQ 有真实 adjusted close 时使用真实 ETF 数据；早于 TQQQ 成立的区间才用 Nasdaq-100 日收益合成。三信号策略包含现金仓、小底 QQQ 加仓、大底分批 TQQQ 进攻、大底后 6 个月把 TQQQ 提到约 90%、高位 TQQQ 锁利卖出，并保留 20% TQQQ 地板仓。战术 QQQ / TQQQ 使用同一组月度信号，但限制为单一 ETF 加现金。",
+    backtestNote: "回测固定每月 $1,000。图表比较 QQQ 定投、战术 QQQ、TQQQ 定投、战术 TQQQ、三信号混合。真实 ETF adjusted close 优先；TQQQ 成立前为合成路径。三信号策略月初入金，月内可升级到小底/大底/快崩。大底后 6 个月向约 90% TQQQ 靠拢，并保留 20% TQQQ 地板。归因是路径估算，不是因果 alpha。",
     workbenchTitle: "策略工作台",
     exportCsv: "导出 CSV",
     copyLink: "复制链接",
@@ -97,18 +119,19 @@ const copy = {
       qqqReturn: "QQQ",
       drawdown: "净值回撤",
       topActions: "主要动作",
-      attributionTitle: "动作月度贡献估算",
+      attributionTitle: "动作月度贡献估算（含市场 beta，非因果）",
       drag: "拖累",
       gain: "贡献",
       months: "月份",
       estimatedPnl: "估算贡献",
-      validationTitle: "Walk-forward 参数验证",
+      validationTitle: "Walk-forward 参数验证（按风险调整超额选参）",
       noValidation: "这个起始年份之后样本太短，暂无可用验证切分。",
       split: "切分点",
       bestThresholds: "训练期最佳阈值",
       trained: "训练期",
       validation: "验证期",
       defaultRule: "默认规则",
+      vsQqq: "验证期/QQQ",
       dataTitle: "数据覆盖与模型口径",
       coverage: "覆盖",
       observations: "条",
@@ -134,32 +157,33 @@ const copy = {
     methods: [
       {
         title: "估值：CAPE 历史分位",
-        body: "取最新 Shiller PE/CAPE，与过去 30 年月度历史值做滚动分位比较。低于 20% 代表便宜，高于 70% 代表高估，高于 85% 进入泡沫警戒。它是宽市场估值锚和月频慢变量，不是 Nasdaq-100 的精确估值。"
+        body: "CAPE 是标普宽基 Shiller PE，不是纳指精确估值。滚动 30 年分位低于 35% 记为便宜；若分位低于 50% 且纳指已深跌 25%+，也记为估值支持。高于 70% 高估，高于 85% 泡沫警戒。"
       },
       {
         title: "趋势：回撤与快崩",
-        body: "用 Nasdaq-100 最近 5 个交易日均值，相对过去约 5 年的 5 日均值高点计算回撤；再与约 25 个交易日前的 5 日均值比较。回撤超过 20% 是深跌，25 日跌超 12% 先按风控处理。"
+        body: "纳指 100 的 5 日均线相对约 5 年高点算回撤。深跌 ≤ -20%，浅跌 ≤ -12%。25 日跌超 12% 为快崩。只有在没有低位折扣信号时，快崩才触发卖出。"
       },
       {
         title: "恐慌：VIX 5 日均值",
-        body: "VIX 反映 S&P 500 期权隐含的近端波动预期。这里取 5 日均值降噪。高于 40 视为恐慌共振，低于 12 视为低波动/过度平静，后者通常不适合追 TQQQ。"
+        body: "VIX 是标普隐含波动，用作跨资产恐慌代理。5 日均值 ≥ 32 记为恐慌。低波动（≤ 12）只作提示，不再单独触发暂停或锁利。"
       }
     ],
     decisions: {
-      bottomAttack: ["大底进攻", "先用约 1/3 现金仓买 TQQQ；随后 6 个月继续把组合里的 TQQQ 提到约 90%。", "这是低估、深跌、恐慌共振时才触发的分批进攻动作。"],
-      smallDipBuy: ["小底加仓", "最多用 2 倍月投入买 QQQ；多余现金继续等待更强信号。", "这是折扣区，不是梭哈区。"],
-      crashDefense: ["快崩风控", "卖出约一半 TQQQ；当月新增资金不买 QQQ/TQQQ，留现金。", "快崩阶段先活下来，再考虑抄底。"],
-      pauseAtHigh: ["高位暂停", "本月暂停新增 QQQ/TQQQ 买入，新增资金进入现金仓。", "高估且贴近新高时，策略赚的是耐心，不是追涨。"],
-      trimHeat: ["过热锁利", "卖出约 1/12 TQQQ，但保留 20% TQQQ 底仓；当月新增资金不买 QQQ/TQQQ，留现金。", "这是降低路径风险，不是看空全部美股。"],
+      bottomAttack: ["大底进攻", "先用约 1/3 现金仓买 TQQQ；随后 6 个月继续把组合里的 TQQQ 提到约 90%。", "至少两个低位信号共振时触发。路径风险高，只适合能承受大幅回撤的仓位。"],
+      rampTqqq: ["大底后加速", "继续用当月资金和部分现金买 TQQQ；不足 90% 时可把部分 QQQ 换成 TQQQ。", "这是大底后的 6 个月执行窗口，不是新的抄底信号。"],
+      smallDipBuy: ["小底加仓", "最多用 2 倍月投入买 QQQ；多余现金继续等待更强信号。", "单个低位信号或浅跌区，加仓但不梭哈。"],
+      crashDefense: ["快崩风控", "卖出约一半 TQQQ；当月新增资金不买 QQQ/TQQQ，留现金。", "只在没有折扣信号时启用。已出现深跌/恐慌时，优先买点而不是强行砍仓。"],
+      pauseAtHigh: ["高位暂停", "本月暂停新增 QQQ/TQQQ 买入，新增资金进入现金仓。", "高估且贴近新高，或进入泡沫警戒时，耐心优于追涨。"],
+      trimHeat: ["过热锁利", "卖出约 1/12 TQQQ，但保留 20% TQQQ 底仓；当月新增资金不买 QQQ/TQQQ，留现金。", "泡沫级估值持续 6 个月以上才锁利，不是普通牛市的例行减仓。"],
       normalDca: ["正常定投", "如果 TQQQ 低于组合 20%，先用当月资金和现金补买 TQQQ；补足后剩余资金买 QQQ。现金仓每月最多拿 1/6 补买 QQQ。", "没有低位信号时，只保留小杠杆底仓，不主动追高。"],
     },
     actions: {
-      bottomAttack: { title: "大底进攻", condition: "2-3 个低位信号同时亮", operation: "先用约 1/3 现金仓买 TQQQ，剩余现金留给后续 6 个月" },
+      bottomAttack: { title: "大底进攻", condition: "2-3 个低位信号同时亮（可月内升级）", operation: "先用约 1/3 现金仓买 TQQQ，剩余现金留给后续 6 个月" },
       rampTqqq: { title: "大底后加速", condition: "大底进攻后的 6 个月", operation: "用当月 $1,000 和约 1/6 现金继续买 TQQQ；还不够 90% 时，卖出一部分 QQQ 换成 TQQQ" },
-      smallDipBuy: { title: "小底加仓", condition: "只有 1 个低位信号亮", operation: "最多 2x 月投入买 QQQ" },
-      crashDefense: { title: "快崩风控", condition: "25 日跌幅 <= -12%，且没有低位共振", operation: "卖出约 1/2 TQQQ；当月不买 QQQ/TQQQ，留现金" },
-      trimHeat: { title: "过热锁利", condition: "过热或低波动持续 6 个月以上", operation: "卖出约 1/12 TQQQ；当月不买 QQQ/TQQQ，留现金" },
-      pauseAtHigh: { title: "高位暂停", condition: "CAPE >= 70% 且指数距高点 < 5%", operation: "不买 QQQ/TQQQ，当月资金留现金" },
+      smallDipBuy: { title: "小底加仓", condition: "1 个低位信号，或浅跌 ≤ -12%", operation: "最多 2x 月投入买 QQQ" },
+      crashDefense: { title: "快崩风控", condition: "25 日跌幅 ≤ -12%，且没有低位/浅跌折扣", operation: "卖出约 1/2 TQQQ；当月不买 QQQ/TQQQ，留现金" },
+      trimHeat: { title: "过热锁利", condition: "CAPE 泡沫警戒持续 6 个月以上", operation: "卖出约 1/12 TQQQ；当月不买 QQQ/TQQQ，留现金" },
+      pauseAtHigh: { title: "高位暂停", condition: "CAPE ≥ 70% 且距高点 < 5%，或泡沫警戒", operation: "不买 QQQ/TQQQ，当月资金留现金" },
       normalDca: { title: "正常定投", condition: "没有触发以上任何动作", operation: "TQQQ 不到 20% 就先买 TQQQ；够了以后买 QQQ，现金仓每月拿 1/6 买回 QQQ" },
     },
     guides: {
@@ -245,10 +269,31 @@ const copy = {
   en: {
     eyebrow: "QQQ / TQQQ",
     title: "Nasdaq Three-Signal Dashboard",
-    subtitle: "Use valuation, drawdown, and volatility to decide whether to buy QQQ, buy TQQQ, pause, or trim TQQQ this month.",
-    decisionKicker: "Action",
+    subtitle: "Use valuation, drawdown, and volatility to decide whether to buy QQQ, buy TQQQ, pause, or trim TQQQ this month. Built for monthly DCA process control, not day trading.",
+    decisionKicker: "Effective month action",
     loadingAction: "Loading",
     loadingOperation: "Fetching market data.",
+    confidenceLabel: "Confidence",
+    confidenceLevels: { high: "High", medium: "Med", low: "Low" },
+    lockedLabel: "Month-open lock",
+    liveLabel: "Live preview",
+    upgradeLabel: "Intra-month upgrade",
+    upgradeYes: "Yes",
+    upgradeNo: "No",
+    edgeKicker: "Vs QQQ DCA",
+    edgeEmpty: "Historical edge appears after the backtest loads.",
+    edgeNote: (h) => `With the same start and monthly cash, the three-signal book ends at about ${fmtNumber(h.signalVsQqq?.finalRelativeMultiple || 0, 2)}x QQQ DCA. Max drawdown ${fmtPct((h.signalMaxDrawdown || 0) * 100)} vs ${fmtPct((h.qqqMaxDrawdown || 0) * 100)} for QQQ DCA.`,
+    edgeStats: {
+      multiple: "Relative multiple",
+      under: "Underperform months",
+      irrGap: "IRR gap",
+      bottoms: "Bottom attacks",
+    },
+    disclaimer: "Research and process tool, not investment advice. No taxes, slippage, or residual tracking error. Historical edge versus QQQ DCA can fail out of sample. TQQQ can suffer severe drawdowns and path-to-zero risk.",
+    historyKicker: "Action path",
+    historyTitle: "Recent effective actions",
+    historyNote: "A mark means the month upgraded after the open. Cash is contributed on the first trading day. Crisis months may upgrade to a stronger buy or risk cut.",
+    upgradedMark: "up",
     capeLabel: "CAPE percentile",
     ddLabel: "Nasdaq-100 drawdown",
     vixLabel: "VIX 5-day average",
@@ -262,19 +307,20 @@ const copy = {
       expensive: "Expensive",
       neutral: "Neutral",
       deep: "Deep drop",
+      mild: "Mild drop",
       fastCrash: "Fast crash",
       normal: "Normal",
       panic: "Panic",
       lowVol: "Low vol",
     },
     methodKicker: "Method",
-    methodTitle: "Daily signals, monthly funding",
+    methodTitle: "Three signals, month-open funding, intra-month upgrades",
     actionCatalogKicker: "Action list",
     actionCatalogTitle: "What the signal strategy can do",
-    actionCatalogNote: "The signal strategy handles low-signal, fast-crash, high-heat, and normal regimes. In fast-crash, heat-trim, and pause-at-high months, new cash does not buy QQQ/TQQQ. QQQ/TQQQ DCA benchmarks only buy monthly and never sell.",
+    actionCatalogNote: "Priority: bottom attack > post-bottom ramp > small dip > fast-crash defense > heat trim > pause at high > normal DCA. Fast-crash sells only when no discount signal is on. Quiet VIX alone no longer forces a pause.",
     guideKicker: "Execution modes",
     guideTitle: "One signal set, two single-ETF references",
-    guideNote: "Only Tactical QQQ and Tactical TQQQ are shown here. These single-ETF reference modes do not change the top three-signal QQQ/TQQQ recommendation.",
+    guideNote: "Tactical QQQ / Tactical TQQQ are references only. In backtests, Tactical QQQ often slightly trails plain QQQ DCA because pauses and trims buy lower path risk with less bull-market capture.",
     guideStatsFinal: "Final value",
     guideStatsDrawdown: "Max drawdown",
     guideReferenceNote: "Reference mode only; it does not change the top three-signal QQQ/TQQQ recommendation.",
@@ -288,7 +334,7 @@ const copy = {
     scaleLabel: "Log y-axis",
     qqqAxisLabel: "Show QQQ price axis",
     actionMarkersLabel: "Show actions in tooltip",
-    backtestNote: "Backtest uses a fixed $1,000 monthly contribution. The chart shows QQQ DCA, Tactical QQQ, TQQQ DCA, Tactical TQQQ, and the three-signal QQQ/TQQQ strategy. QQQ/TQQQ use adjusted ETF closes when available; pre-TQQQ-inception ranges are synthetic from Nasdaq-100 daily returns. Tactical QQQ / TQQQ reuse the same monthly signals but restrict trades to one ETF plus cash.",
+    backtestNote: "Backtest uses a fixed $1,000 monthly contribution. Compare QQQ DCA, Tactical QQQ, TQQQ DCA, Tactical TQQQ, and the three-signal mix. Adjusted ETF closes are preferred; pre-TQQQ history is synthetic. The signal book funds on month-open and can upgrade mid-month to small-dip, bottom-attack, or crash defense. Post-bottom months target about 90% TQQQ with a 20% floor. Attribution is path-linked, not causal alpha.",
     workbenchTitle: "Strategy workbench",
     exportCsv: "Export CSV",
     copyLink: "Copy link",
@@ -314,18 +360,19 @@ const copy = {
       qqqReturn: "QQQ",
       drawdown: "NAV drawdown",
       topActions: "Main actions",
-      attributionTitle: "Estimated monthly action contribution",
+      attributionTitle: "Estimated monthly action contribution (includes market beta)",
       drag: "Drag",
       gain: "Gain",
       months: "Months",
       estimatedPnl: "Estimated PnL",
-      validationTitle: "Walk-forward parameter validation",
+      validationTitle: "Walk-forward validation (risk-adjusted excess selection)",
       noValidation: "This start year leaves too little forward sample for validation splits.",
       split: "Split",
       bestThresholds: "Best train thresholds",
       trained: "Train",
       validation: "Validation",
       defaultRule: "Default rule",
+      vsQqq: "OOS / QQQ",
       dataTitle: "Coverage and model assumptions",
       coverage: "Coverage",
       observations: "obs",
@@ -351,32 +398,33 @@ const copy = {
     methods: [
       {
         title: "Valuation: CAPE percentile",
-        body: "Compare the latest Shiller PE/CAPE with a rolling 30-year monthly window. Below 20% is cheap, above 70% is expensive, and above 85% is bubble-watch territory. It is a broad-market valuation anchor and slow monthly variable, not a precise Nasdaq-100 valuation."
+        body: "CAPE is S&P Shiller PE, not a precise Nasdaq valuation. Below the 35th rolling 30-year percentile counts as cheap. Below the 50th percentile with a Nasdaq-100 drawdown of 25%+ also counts as valuation support. Above 70% is expensive; above 85% is bubble watch."
       },
       {
         title: "Trend: drawdown and fast crash",
-        body: "Use the Nasdaq-100 5-day average versus its rolling 5-year high to measure drawdown, then compare it with the 5-day average around 25 trading days ago. A 20% drawdown is deep; a 12% 25-day drop triggers risk control first."
+        body: "Nasdaq-100 5-day averages versus a rolling 5-year high define drawdown. Deep is <= -20%, mild is <= -12%. A 12% 25-day drop is a fast crash. Fast-crash selling only fires when no discount signal is active."
       },
       {
         title: "Fear: VIX 5-day average",
-        body: "VIX reflects near-term volatility implied by S&P 500 options. A 5-day average reduces noise. Above 40 marks panic; below 12 marks excessive calm, which is usually a poor time to chase TQQQ."
+        body: "VIX is S&P implied vol, used as a cross-asset panic proxy. A 5-day average at or above 32 counts as panic. Quiet vol (<= 12) is informational only and no longer forces pause or trim by itself."
       }
     ],
     decisions: {
-      bottomAttack: ["Bottom attack", "Deploy about 1/3 of cash into TQQQ, then spend 6 months lifting TQQQ toward about 90% of the portfolio.", "This staged attack only fires when cheap valuation, deep drawdown, and panic start to converge."],
-      smallDipBuy: ["Small dip buy", "Buy QQQ with up to 2x the monthly contribution; keep excess cash for stronger signals.", "This is a discount zone, not an all-in signal."],
-      crashDefense: ["Fast-crash defense", "Sell about half of TQQQ into cash. New monthly cash does not buy QQQ/TQQQ.", "Survive the fast crash before trying to catch the bottom."],
-      pauseAtHigh: ["Pause at high", "Pause new QQQ/TQQQ buying this month. Route new money to cash.", "When valuation is high near the index high, patience is the edge."],
-      trimHeat: ["Trim heat", "Sell about 1/12 of TQQQ, keep a 20% TQQQ floor, and keep new monthly cash in cash.", "This lowers path risk; it is not an all-equity bearish call."],
+      bottomAttack: ["Bottom attack", "Deploy about 1/3 of cash into TQQQ, then spend 6 months lifting TQQQ toward about 90% of the portfolio.", "Needs at least two low signals. Path risk is high; size only what you can hold through a severe drawdown."],
+      rampTqqq: ["Post-bottom ramp", "Keep buying TQQQ with monthly cash and part of saved cash. If still below 90%, rotate some QQQ into TQQQ.", "This is the 6-month execution window after a bottom attack, not a fresh bottom call."],
+      smallDipBuy: ["Small dip buy", "Buy QQQ with up to 2x the monthly contribution; keep excess cash for stronger signals.", "One low signal or a mild drawdown. Add, do not all-in."],
+      crashDefense: ["Fast-crash defense", "Sell about half of TQQQ into cash. New monthly cash does not buy QQQ/TQQQ.", "Only when no discount signal is on. If deep drop or panic is already present, buy rules take priority over forced liquidation."],
+      pauseAtHigh: ["Pause at high", "Pause new QQQ/TQQQ buying this month. Route new money to cash.", "Expensive near the high, or bubble watch. Patience beats chase."],
+      trimHeat: ["Trim heat", "Sell about 1/12 of TQQQ, keep a 20% TQQQ floor, and keep new monthly cash in cash.", "Only after bubble-level CAPE has lasted 6+ months. Not a routine bull-market sell."],
       normalDca: ["Normal DCA", "If TQQQ is below 20% of the portfolio, use monthly money and cash to buy TQQQ first. After that, buy QQQ. Each month, use up to 1/6 of extra cash to buy QQQ.", "Without low signals, keep only a small leverage floor instead of chasing."],
     },
     actions: {
-      bottomAttack: { title: "Bottom attack", condition: "2-3 low signals are on", operation: "Deploy about 1/3 of cash into TQQQ; keep the rest for the next 6 months" },
+      bottomAttack: { title: "Bottom attack", condition: "2-3 low signals on (can upgrade mid-month)", operation: "Deploy about 1/3 of cash into TQQQ; keep the rest for the next 6 months" },
       rampTqqq: { title: "Post-bottom ramp", condition: "6 months after a bottom attack", operation: "Use the monthly $1,000 and about 1/6 of cash to buy TQQQ; if still below 90%, sell part of QQQ and buy TQQQ" },
-      smallDipBuy: { title: "Small dip buy", condition: "Exactly 1 low signal is on", operation: "Buy QQQ with up to 2x monthly contribution" },
-      crashDefense: { title: "Fast-crash defense", condition: "25-day drop <= -12%, without low-signal convergence", operation: "Sell about 1/2 of TQQQ; do not buy QQQ/TQQQ this month" },
-      trimHeat: { title: "Trim heat", condition: "Heat/quiet regime lasts 6+ months", operation: "Sell about 1/12 of TQQQ; do not buy QQQ/TQQQ this month" },
-      pauseAtHigh: { title: "Pause at high", condition: "CAPE >= 70% and index is within 5% of its high", operation: "Do not buy QQQ/TQQQ; hold monthly cash" },
+      smallDipBuy: { title: "Small dip buy", condition: "1 low signal, or mild drawdown <= -12%", operation: "Buy QQQ with up to 2x monthly contribution" },
+      crashDefense: { title: "Fast-crash defense", condition: "25-day drop <= -12% with no discount signal", operation: "Sell about 1/2 of TQQQ; do not buy QQQ/TQQQ this month" },
+      trimHeat: { title: "Trim heat", condition: "Bubble-watch CAPE lasts 6+ months", operation: "Sell about 1/12 of TQQQ; do not buy QQQ/TQQQ this month" },
+      pauseAtHigh: { title: "Pause at high", condition: "CAPE >= 70% and within 5% of high, or bubble watch", operation: "Do not buy QQQ/TQQQ; hold monthly cash" },
       normalDca: { title: "Normal DCA", condition: "No higher-priority rule fires", operation: "Buy TQQQ until it reaches 20%; then buy QQQ, using 1/6 of spare cash monthly" },
     },
     guides: {
@@ -664,6 +712,15 @@ function renderStatic() {
   $("title").textContent = t.title;
   $("subtitle").textContent = t.subtitle;
   $("decisionKicker").textContent = t.decisionKicker;
+  $("confidenceLabel").textContent = t.confidenceLabel;
+  $("lockedLabel").textContent = t.lockedLabel;
+  $("liveLabel").textContent = t.liveLabel;
+  $("upgradeLabel").textContent = t.upgradeLabel;
+  $("edgeKicker").textContent = t.edgeKicker;
+  $("disclaimer").textContent = t.disclaimer;
+  $("historyKicker").textContent = t.historyKicker;
+  $("historyTitle").textContent = t.historyTitle;
+  $("historyNote").textContent = t.historyNote;
   $("capeLabel").textContent = t.capeLabel;
   $("ddLabel").textContent = t.ddLabel;
   $("vixLabel").textContent = t.vixLabel;
@@ -731,7 +788,7 @@ function renderActionCatalog() {
 
 function renderExecutionGuides() {
   const t = copy[lang];
-  const currentKey = marketData?.decision?.key || "normalDca";
+  const currentKey = marketData?.decision?.key || marketData?.liveDecision?.key || "normalDca";
   $("executionGuides").replaceChildren(...Object.entries(guideStrategyKeys).map(([key, strategyKey]) => {
     const guide = t.guides[key];
     const card = document.createElement("article");
@@ -771,13 +828,74 @@ function chip(label, on) {
   return el;
 }
 
+function actionTitle(key) {
+  return copy[lang].actions[key]?.title || copy[lang].decisions[key]?.[0] || key;
+}
+
+function renderEdgeCard() {
+  const t = copy[lang];
+  const card = $("edgeCard");
+  const headline = backtestData?.headline;
+  if (!headline?.signalVsQqq) {
+    card.hidden = false;
+    $("edgeMultiple").textContent = "--";
+    $("edgeNote").textContent = t.edgeEmpty;
+    $("edgeStats").replaceChildren();
+    return;
+  }
+  card.hidden = false;
+  const rel = headline.signalVsQqq.finalRelativeMultiple;
+  $("edgeMultiple").textContent = `${fmtNumber(rel, 2)}x`;
+  $("edgeNote").textContent = t.edgeNote(headline);
+  const irrGap = (headline.signalIrr != null && headline.qqqIrr != null)
+    ? headline.signalIrr - headline.qqqIrr
+    : null;
+  $("edgeStats").innerHTML = `
+    <div><span>${t.edgeStats.multiple}</span><strong>${fmtNumber(rel, 2)}x</strong></div>
+    <div><span>${t.edgeStats.under}</span><strong>${fmtPct((headline.signalVsQqq.underperformanceRate || 0) * 100, 0)}</strong></div>
+    <div><span>${t.edgeStats.irrGap}</span><strong>${irrGap == null ? "--" : fmtSignedPct(irrGap * 100)}</strong></div>
+    <div><span>${t.edgeStats.bottoms}</span><strong>${headline.bottomAttackCount || 0}</strong></div>
+  `;
+}
+
+function renderDecisionHistory() {
+  const el = $("decisionHistory");
+  const t = copy[lang];
+  const rows = marketData?.decisionHistory || [];
+  if (!rows.length) {
+    el.replaceChildren();
+    return;
+  }
+  el.replaceChildren(...rows.map((row) => {
+    const item = document.createElement("div");
+    const visual = actionVisuals[row.key] || actionVisuals.normalDca;
+    item.className = `history-chip${row.upgraded ? " upgraded" : ""}`;
+    item.style.setProperty("--action-color", visual.color);
+    item.innerHTML = `
+      <span class="history-month">${escapeHtml(row.month)}</span>
+      <span class="history-action" style="background:${visual.color}">${escapeHtml(visual.icon)}</span>
+      <strong>${escapeHtml(actionTitle(row.key))}</strong>
+      ${row.upgraded ? `<em>${escapeHtml(t.upgradedMark)}</em>` : ""}
+    `;
+    item.title = `${row.month}: ${actionTitle(row.key)}${row.upgraded ? ` (${actionTitle(row.lockedKey)} → ${actionTitle(row.key)})` : ""}`;
+    return item;
+  }));
+}
+
 function renderMarket() {
   if (!marketData) return;
   const t = copy[lang];
   const { cape, nasdaq100, vix } = marketData.indicators;
+  const thr = marketData.decision?.thresholds || {};
+  const cheapCape = thr.cheapCape ?? 35;
+  const deepDd = thr.deepDrawdown ?? -20;
+  const mildDd = thr.mildDrawdown ?? -12;
+  const panicVix = thr.panicVix ?? 32;
+  const fastCrash = thr.fastCrash ?? -12;
+
   $("capeValue").textContent = fmtPct(cape.percentile);
   $("capeNote").textContent = t.capeNote(cape);
-  const capeState = cape.percentile < 20
+  const capeState = cape.percentile < cheapCape
     ? ["blue", t.statusLabels.cheap]
     : cape.percentile >= 70
       ? ["red", t.statusLabels.expensive]
@@ -787,17 +905,19 @@ function renderMarket() {
 
   $("ddValue").textContent = fmtPct(nasdaq100.drawdownPct);
   $("ddNote").textContent = t.ddNote(nasdaq100);
-  const ddState = nasdaq100.drawdownPct <= -20
+  const ddState = nasdaq100.drawdownPct <= deepDd
     ? ["blue", t.statusLabels.deep]
-    : nasdaq100.crash25dPct <= -12
+    : nasdaq100.crash25dPct <= fastCrash
       ? ["red", t.statusLabels.fastCrash]
-      : ["amber", t.statusLabels.normal];
+      : nasdaq100.drawdownPct <= mildDd
+        ? ["blue", t.statusLabels.mild]
+        : ["amber", t.statusLabels.normal];
   setStatus("ddDot", "ddStatus", ddState[0], ddState[1]);
   renderSparkline("ddSparkline", nasdaq100.recent, (value) => fmtNumber(value, 0));
 
   $("vixValue").textContent = fmtNumber(vix.value5dAvg, 1);
   $("vixNote").textContent = t.vixNote(vix);
-  const vixState = vix.value5dAvg >= 40
+  const vixState = vix.value5dAvg >= panicVix
     ? ["blue", t.statusLabels.panic]
     : vix.value5dAvg <= 12
       ? ["red", t.statusLabels.lowVol]
@@ -806,11 +926,22 @@ function renderMarket() {
   renderSparkline("vixSparkline", vix.recent, (value) => fmtNumber(value, 1));
 
   const decision = marketData.decision;
-  const text = t.decisions[decision.key];
+  const text = t.decisions[decision.key] || t.decisions.normalDca;
   $("decisionPanel").style.setProperty("--decision-color", actionVisuals[decision.key]?.color || colors.signal);
   $("action").textContent = text[0];
   $("operation").textContent = text[1];
   $("risk").textContent = text[2];
+
+  const confidence = decision.confidence || { level: "medium", score: 0.5 };
+  $("confidencePill").hidden = false;
+  $("confidencePill").dataset.level = confidence.level;
+  $("confidenceValue").textContent = `${t.confidenceLevels[confidence.level] || confidence.level} ${fmtNumber(confidence.score * 100, 0)}`;
+
+  $("cadenceRow").hidden = false;
+  $("lockedValue").textContent = actionTitle(decision.lockedKey || decision.key);
+  $("liveValue").textContent = actionTitle(decision.liveKey || decision.key);
+  $("upgradeValue").textContent = decision.upgraded ? t.upgradeYes : t.upgradeNo;
+
   $("meta").textContent = t.meta(marketData);
   $("sources").innerHTML = `${t.sources}<a href="https://finance.yahoo.com/quote/%5ENDX/">Yahoo ^NDX</a>, <a href="https://finance.yahoo.com/quote/QQQ/">Yahoo QQQ</a>, <a href="https://finance.yahoo.com/quote/TQQQ/">Yahoo TQQQ</a>, <a href="https://finance.yahoo.com/quote/%5EVIX/">Yahoo ^VIX</a>, <a href="https://fred.stlouisfed.org/series/FEDFUNDS">FRED FEDFUNDS</a>, <a href="https://www.multpl.com/shiller-pe/table/by-month">Multpl Shiller PE</a>.`;
 
@@ -823,6 +954,8 @@ function renderMarket() {
     chip(t.chips.fastCrash, decision.defensiveFlags.fastCrash),
     chip(t.chips.quietVix, decision.defensiveFlags.quietVix),
   );
+  renderDecisionHistory();
+  renderEdgeCard();
   renderExecutionGuides();
 }
 
@@ -850,12 +983,16 @@ function renderBacktest() {
   renderChart();
   renderExecutionGuides();
   renderWorkbench();
+  renderEdgeCard();
   const t = copy[lang];
   const cards = visibleStrategies().map((strategy) => {
     const card = document.createElement("article");
     card.className = `metric-card${selected.has(strategy.key) ? "" : " muted-card"}`;
     const bottomRow = strategy.key.startsWith("signal")
       ? `<div class="metric-row"><span>${t.metricLabels.bottomAttack}</span><strong>${strategy.actionCounts?.bottomAttack || 0}</strong></div>`
+      : "";
+    const vsRow = strategy.vsQqq
+      ? `<div class="metric-row"><span>vs QQQ</span><strong>${fmtNumber(strategy.vsQqq.finalRelativeMultiple, 2)}x</strong></div>`
       : "";
     card.innerHTML = `
       <h3><span class="swatch" style="display:inline-block;background:${colors[strategy.key]}"></span> ${t.strategies[strategy.key]}</h3>
@@ -866,6 +1003,7 @@ function renderBacktest() {
       <div class="metric-row"><span>${t.metricLabels.regression}</span><strong>${hasRegression(strategy) ? fmtPct(strategy.regression.annualized * 100) : t.metricLabels.shortSample}</strong></div>
       <div class="metric-row"><span>${t.metricLabels.sharpe}</span><strong>${strategy.risk?.sharpe == null ? "--" : fmtNumber(strategy.risk.sharpe, 2)}</strong></div>
       <div class="metric-row"><span>${t.metricLabels.ulcer}</span><strong>${strategy.risk?.ulcer == null ? "--" : fmtNumber(strategy.risk.ulcer, 1)}</strong></div>
+      ${vsRow}
       ${bottomRow}
     `;
     return card;
@@ -1100,7 +1238,7 @@ function renderValidationView() {
     <div class="table-scroll">
       <table class="plain-table">
         <thead>
-          <tr><th>${t.workbench.split}</th><th>${t.workbench.bestThresholds}</th><th>${t.workbench.trained}</th><th>${t.workbench.validation}</th><th>${t.workbench.defaultRule}</th></tr>
+          <tr><th>${t.workbench.split}</th><th>${t.workbench.bestThresholds}</th><th>${t.workbench.trained}</th><th>${t.workbench.validation}</th><th>${t.workbench.defaultRule}</th><th>${t.workbench.vsQqq}</th></tr>
         </thead>
         <tbody>
           ${rows.map((row) => `
@@ -1110,6 +1248,7 @@ function renderValidationView() {
               <td>${fmtMoney(row.trainFinalValue)}</td>
               <td>${fmtMoney(row.validationFinalValue)}</td>
               <td>${fmtMoney(row.defaultValidationFinalValue)}</td>
+              <td>${row.defaultValidationVsQqq == null ? "--" : `${fmtNumber(row.defaultValidationVsQqq, 2)}x`}</td>
             </tr>
           `).join("")}
         </tbody>

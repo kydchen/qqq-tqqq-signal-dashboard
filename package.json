@@ -1,8 +1,8 @@
 {
   "name": "qqq-tqqq-signal-dashboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
-  "description": "Bilingual QQQ/TQQQ three-signal dashboard with live indicators and interactive DCA backtests.",
+  "description": "Bilingual QQQ/TQQQ three-signal dashboard with month-open DCA, intra-month upgrades, and decision-first UI.",
   "scripts": {
     "dev": "node dev-server.cjs",
     "check": "node scripts/check.cjs",
