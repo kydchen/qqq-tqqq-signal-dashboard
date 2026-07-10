@@ -1,8 +1,13 @@
+const crypto = require("crypto");
+
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const CAPE_URL = "https://www.multpl.com/shiller-pe/table/by-month";
 const CACHE_MS = 15 * 60 * 1000;
-const VALID_STARTS = new Set(["1990-01-01", "1995-01-01", "2000-01-01", "2005-01-01", "2010-01-01", "2015-01-01", "2020-01-01", "2025-01-01"]);
+const RULESET_ID = "2026-07-v3";
+const VALID_STARTS = new Set(["1990-01-01", "1995-01-01", "2000-01-01", "2005-01-01", "2010-01-01", "2010-02-11", "2015-01-01", "2020-01-01", "2025-01-01"]);
 const VALID_MONTHLY = new Set([1000]);
+const VALID_COST_BPS = new Set([0, 5, 10]);
+const DEFAULT_COST_BPS = 5;
 const CAPE_ROLLING_MONTHS = 360;
 const ROLLING_HIGH_DAYS = 252 * 5;
 const QQQ_DIVIDEND_YIELD = 0.007;
@@ -29,6 +34,11 @@ const DEFAULT_THRESHOLDS = {
   panicVix: 32,
   quietVix: 12,
 };
+const RISK_POLICIES = Object.freeze({
+  conservative: Object.freeze({ maxTqqq: 0, normalTqqqFloor: 0, bottomTqqqTarget: 0, rampTqqqTarget: 0 }),
+  standard: Object.freeze({ maxTqqq: 0.4, normalTqqqFloor: 0.1, bottomTqqqTarget: 0.25, rampTqqqTarget: 0.4 }),
+  aggressive: Object.freeze({ maxTqqq: 0.9, normalTqqqFloor: 0.2, bottomTqqqTarget: 0.35, rampTqqqTarget: 0.9 }),
+});
 const ACTION_KEYS = ["bottomAttack", "rampTqqq", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"];
 const EVENT_WINDOWS = [
   { key: "dotcom", start: "2000-03-31", end: "2002-10-31" },
@@ -255,6 +265,33 @@ async function loadData() {
   };
 }
 
+function loadSnapshotData() {
+  const data = {
+    nasdaq: loadJsonSnapshot("ndx-snapshot.json"),
+    qqq: loadJsonSnapshot("qqq-snapshot.json"),
+    tqqq: loadJsonSnapshot("tqqq-snapshot.json"),
+    vix: loadJsonSnapshot("vix-snapshot.json"),
+    rates: loadJsonSnapshot("rates-snapshot.json"),
+    capeLatestFirst: loadCapeSnapshot(),
+    staleSources: [],
+    sourceMode: "versionedSnapshots",
+  };
+  for (const [name, points] of Object.entries(data)) {
+    if (name === "staleSources" || name === "sourceMode") continue;
+    if (!Array.isArray(points) || points.length < 60) throw new Error(`${name} snapshot is incomplete`);
+  }
+  return data;
+}
+
+function buildDataSnapshotId(data) {
+  const hash = crypto.createHash("sha256");
+  for (const key of ["nasdaq", "qqq", "tqqq", "vix", "rates", "capeLatestFirst"]) {
+    hash.update(key);
+    hash.update(JSON.stringify(data[key] || []));
+  }
+  return `snapshot-${hash.digest("hex").slice(0, 16)}`;
+}
+
 function loadCapeSnapshot() {
   if (capeSnapshot) return capeSnapshot;
   try {
@@ -401,8 +438,8 @@ function advanceSignalMonth(memory, state, month, thresholds = DEFAULT_THRESHOLD
   };
 }
 
-function normalizeStart(rawStart = "2000-01") {
-  const match = String(rawStart || "2000-01").trim().match(/^(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/);
+function normalizeStart(rawStart = "2010-02-11") {
+  const match = String(rawStart || "2010-02-11").trim().match(/^(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/);
   if (!match) throw new HttpError(400, "Invalid start. Use one of the year options on the page.");
   const year = Number(match[1]);
   const month = Number(match[2] || 1);
@@ -424,6 +461,14 @@ function normalizeMonthly(rawMonthly = 1000) {
     throw new HttpError(400, "Unsupported monthly amount. This backtest is fixed at $1,000.");
   }
   return monthly;
+}
+
+function normalizeCostBps(rawCostBps = DEFAULT_COST_BPS) {
+  const costBps = Number(rawCostBps ?? DEFAULT_COST_BPS);
+  if (!VALID_COST_BPS.has(costBps)) {
+    throw new HttpError(400, "Unsupported trading cost. Choose 0, 5, or 10 basis points.");
+  }
+  return costBps;
 }
 
 function calculateDecision(state, memory = {}, thresholds = DEFAULT_THRESHOLDS) {
@@ -479,18 +524,18 @@ function decisionConfidence(decision, state = {}) {
     || near(state.crash25dPct ?? 0, DEFAULT_THRESHOLDS.fastCrash, 1.5)
   );
   if (decision.key === "bottomAttack" && decision.lowSignalCount >= 3) {
-    return { level: "high", score: 0.92, note: "threeLowSignals" };
+    return { level: "high", note: "threeLowSignals", calibrated: false };
   }
   if (decision.key === "bottomAttack") {
-    return { level: borderline ? "medium" : "high", score: borderline ? 0.72 : 0.86, note: "twoLowSignals" };
+    return { level: borderline ? "medium" : "high", note: "twoLowSignals", calibrated: false };
   }
   if (decision.key === "crashDefense" || decision.key === "trimHeat") {
-    return { level: borderline ? "medium" : "high", score: borderline ? 0.68 : 0.8, note: decision.key };
+    return { level: borderline ? "medium" : "high", note: decision.key, calibrated: false };
   }
   if (decision.key === "smallDipBuy" || decision.key === "pauseAtHigh" || decision.key === "rampTqqq") {
-    return { level: borderline ? "low" : "medium", score: borderline ? 0.48 : 0.64, note: decision.key };
+    return { level: borderline ? "low" : "medium", note: decision.key, calibrated: false };
   }
-  return { level: borderline ? "low" : "medium", score: borderline ? 0.42 : 0.58, note: "normalDca" };
+  return { level: borderline ? "low" : "medium", note: "normalDca", calibrated: false };
 }
 
 function actionSeverity(key) {
@@ -548,6 +593,8 @@ function buildDataQuality(data, prices = []) {
     qqqAdjusted: true,
     tqqqAdjusted: true,
     rateSource: data.rates?.length ? "FEDFUNDS" : "approximation",
+    sourceMode: data.sourceMode || "liveWithSnapshotFallback",
+    capePointInTime: false,
   };
 }
 
@@ -633,6 +680,7 @@ function firstIndexOfMonth(prices, month) {
 async function marketSnapshot() {
   const data = await loadData();
   const { nasdaq, qqq, tqqq, vix, rates, capeLatestFirst, staleSources } = data;
+  const dataSnapshotId = buildDataSnapshotId(data);
   const nasdaqValues = nasdaq.map((point) => point.value);
   const vixValues = vix.map((point) => point.value);
   const currentIndex = mean(nasdaqValues.slice(-5));
@@ -680,6 +728,7 @@ async function marketSnapshot() {
     upgraded,
     month: currentMonth,
     asOf: prices.at(-1).date,
+    executionTiming: "nextTradingSession",
     lockedDate: prices[monthStartIndex]?.date || prices.at(-1).date,
     confidence: decisionConfidence({ ...liveDecision, key: effectiveKey }, currentState),
     thresholds: {
@@ -692,18 +741,36 @@ async function marketSnapshot() {
       bubbleCape: DEFAULT_THRESHOLDS.bubbleCape,
     },
   };
+  const decisionCriticalStale = staleSources.filter((name) => ["Nasdaq-100", "VIX", "CAPE"].includes(name));
+  const executionCriticalStale = staleSources.filter((name) => ["Nasdaq-100", "VIX", "CAPE", "QQQ", "TQQQ"].includes(name));
+  const decisionDate = prices.at(-1).date;
+  const qqqLatest = qqq.at(-1);
+  const tqqqLatest = tqqq.at(-1);
+  const quoteDateMismatch = qqqLatest?.date !== decisionDate || tqqqLatest?.date !== decisionDate;
+  decision.available = decisionCriticalStale.length === 0;
+  decision.blockedSources = decisionCriticalStale;
   const rollingHigh = currentIndex / (1 + currentState.drawdownPct / 100);
   const decisionHistory = buildMonthlyDecisionLog(prices, nasdaq, vix, capeChrono, states, DEFAULT_THRESHOLDS, 18);
 
   return {
     generatedAt: new Date().toISOString(),
+    rulesetId: RULESET_ID,
+    dataSnapshotId,
     staleSources,
+    executionReady: executionCriticalStale.length === 0 && !quoteDateMismatch,
+    executionBlockedSources: executionCriticalStale,
+    riskPolicies: RISK_POLICIES,
     dataQuality: buildDataQuality(data, prices),
     cadence: {
       mode: "monthlyContributionWithIntraMonthUpgrades",
       contribution: "firstTradingDay",
       upgrades: "bottomAttack/smallDipBuy/crashDefense can upgrade later in the month",
-      note: "Live panel shows the effective month action. Locked is first trading day. Live preview is today's re-evaluation.",
+      execution: "signal observed at close, manual order for next trading session",
+      note: "Live panel shows the effective month action. Locked is first trading day. Live preview is today's re-evaluation. Orders use the next trading session, never the same closing price that created the signal.",
+    },
+    quotes: {
+      qqq: { date: qqqLatest?.date || null, price: qqqLatest?.close || qqqLatest?.value || null },
+      tqqq: { date: tqqqLatest?.date || null, price: tqqqLatest?.close || tqqqLatest?.value || null },
     },
     indicators: {
       cape: {
@@ -831,8 +898,8 @@ function buildPrices(nasdaq, qqqSeries = [], tqqqSeries = [], rates = []) {
   });
 }
 
-function emptyPortfolio() {
-  return { cash: 0, qqq: 0, tqqq: 0, contributed: 0, units: 0, peak: 0, maxDrawdown: 0, points: [], flows: [] };
+function emptyPortfolio(costBps = DEFAULT_COST_BPS) {
+  return { cash: 0, qqq: 0, tqqq: 0, contributed: 0, units: 0, peak: 0, maxDrawdown: 0, points: [], flows: [], fees: 0, costBps };
 }
 
 function valueOf(portfolio, prices) {
@@ -858,29 +925,40 @@ function accrueCash(portfolio, prices) {
 function buyQQQ(portfolio, amount, price) {
   if (price <= 0) return;
   const spend = Math.max(0, Math.min(portfolio.cash, amount));
+  const rate = (portfolio.costBps || 0) / 10000;
+  const shares = spend / (price * (1 + rate));
   portfolio.cash -= spend;
-  portfolio.qqq += spend / price;
+  portfolio.qqq += shares;
+  portfolio.fees += spend - shares * price;
 }
 
 function buyTQQQ(portfolio, amount, price) {
   if (price <= 0) return;
   const spend = Math.max(0, Math.min(portfolio.cash, amount));
+  const rate = (portfolio.costBps || 0) / 10000;
+  const shares = spend / (price * (1 + rate));
   portfolio.cash -= spend;
-  portfolio.tqqq += spend / price;
+  portfolio.tqqq += shares;
+  portfolio.fees += spend - shares * price;
 }
 
 function sellQQQ(portfolio, amount, price) {
   if (price <= 0) return;
   const value = Math.max(0, Math.min(portfolio.qqq * price, amount));
+  const fee = value * ((portfolio.costBps || 0) / 10000);
   portfolio.qqq -= value / price;
-  portfolio.cash += value;
+  portfolio.cash += value - fee;
+  portfolio.fees += fee;
 }
 
 function sellTQQQ(portfolio, fraction, price) {
   if (price <= 0) return;
   const shares = portfolio.tqqq * fraction;
+  const value = shares * price;
+  const fee = value * ((portfolio.costBps || 0) / 10000);
   portfolio.tqqq -= shares;
-  portfolio.cash += shares * price;
+  portfolio.cash += value - fee;
+  portfolio.fees += fee;
 }
 
 function sellTQQQWithFloor(portfolio, fraction, prices, floorPct) {
@@ -890,8 +968,10 @@ function sellTQQQWithFloor(portfolio, fraction, prices, floorPct) {
   const floorValue = totalValue * floorPct;
   const sellValue = Math.max(0, Math.min(tqqqValue * fraction, tqqqValue - floorValue));
   if (sellValue <= 0) return;
+  const fee = sellValue * ((portfolio.costBps || 0) / 10000);
   portfolio.tqqq -= sellValue / prices.tqqq;
-  portfolio.cash += sellValue;
+  portfolio.cash += sellValue - fee;
+  portfolio.fees += fee;
 }
 
 function buyTQQQToTarget(portfolio, targetPct, prices, rotationPct = 0, cashLimit = Infinity) {
@@ -909,7 +989,7 @@ function buyTQQQToTarget(portfolio, targetPct, prices, rotationPct = 0, cashLimi
   buyTQQQ(portfolio, rotateValue, prices.tqqq);
 }
 
-function record(portfolio, prices, startTime, actionKey = null, qqqPrice = null) {
+function record(portfolio, prices, startTime, actionKey = null, qqqPrice = null, actionMeta = {}) {
   const qqqValue = portfolio.qqq * prices.qqq;
   const tqqqValue = portfolio.tqqq * prices.tqqq;
   const cashValue = portfolio.cash;
@@ -927,8 +1007,12 @@ function record(portfolio, prices, startTime, actionKey = null, qqqPrice = null)
     qqqWeight: value > 0 ? qqqValue / value : 0,
     tqqqWeight: value > 0 ? tqqqValue / value : 0,
     tqqqSource: prices.tqqqSource,
+    shortRate: prices.shortRate,
+    fees: portfolio.fees,
     year: (new Date(`${prices.date}T00:00:00Z`).getTime() - startTime) / (365.25 * 24 * 3600 * 1000),
     actionKey,
+    actionDecisionDate: actionMeta.decisionDate || null,
+    actionExecutionDate: actionMeta.executionDate || null,
   });
 }
 
@@ -979,20 +1063,28 @@ function regression(points) {
 }
 
 function riskStats(points) {
-  const returns = [];
+  const excessReturns = [];
   let peak = 0;
   const drawdowns = [];
   for (let i = 0; i < points.length; i += 1) {
     const nav = points[i].nav;
-    if (i > 0 && points[i - 1].nav > 0) returns.push(nav / points[i - 1].nav - 1);
+    if (i > 0 && points[i - 1].nav > 0) {
+      const totalReturn = nav / points[i - 1].nav - 1;
+      const previousDate = new Date(`${points[i - 1].date}T00:00:00Z`).getTime();
+      const currentDate = new Date(`${points[i].date}T00:00:00Z`).getTime();
+      const years = Math.max(0, currentDate - previousDate) / (365.25 * 24 * 3600 * 1000);
+      const annualRate = points[i - 1].shortRate || 0;
+      const riskFreeReturn = (1 + annualRate) ** years - 1;
+      excessReturns.push(totalReturn - riskFreeReturn);
+    }
     peak = Math.max(peak, nav);
     if (peak > 0) drawdowns.push(Math.min(0, nav / peak - 1));
   }
-  const avg = returns.length ? mean(returns) : 0;
-  const variance = returns.length > 1 ? returns.reduce((sum, value) => sum + (value - avg) ** 2, 0) / (returns.length - 1) : 0;
+  const avg = excessReturns.length ? mean(excessReturns) : 0;
+  const variance = excessReturns.length > 1 ? excessReturns.reduce((sum, value) => sum + (value - avg) ** 2, 0) / (excessReturns.length - 1) : 0;
   const sharpe = variance > 0 ? (avg / Math.sqrt(variance)) * Math.sqrt(12) : null;
   const ulcer = drawdowns.length ? Math.sqrt(drawdowns.reduce((sum, value) => sum + (value * 100) ** 2, 0) / drawdowns.length) : null;
-  return { sharpe, ulcer };
+  return { sharpe, ulcer, sharpeType: "monthlyExcessReturnOverCash" };
 }
 
 function stateAt(index, prices, nasdaq, vixByDate, capeChrono, capeCursor) {
@@ -1117,6 +1209,13 @@ function relativeEdge(candidatePoints, benchmarkPoints) {
   let worstRelative = 0;
   let relativePeak = 1;
   let worstRelativeDrawdown = 0;
+  let underperformanceStreak = 0;
+  let longestUnderperformanceStreak = 0;
+  let relativePeakDate = candidatePoints[0]?.date || null;
+  let underwaterStartDate = null;
+  let longestUnderwaterMonths = 0;
+  let longestUnderwaterStart = null;
+  let longestUnderwaterEnd = null;
   for (let i = 0; i < n; i += 1) {
     const cNav = candidatePoints[i].nav;
     const bNav = benchmarkPoints[i].nav;
@@ -1125,10 +1224,30 @@ function relativeEdge(candidatePoints, benchmarkPoints) {
     if (i > 0) {
       const cRet = cNav / candidatePoints[i - 1].nav - 1;
       const bRet = bNav / benchmarkPoints[i - 1].nav - 1;
-      if (cRet < bRet) underMonths += 1;
+      if (cRet < bRet) {
+        underMonths += 1;
+        underperformanceStreak += 1;
+        longestUnderperformanceStreak = Math.max(longestUnderperformanceStreak, underperformanceStreak);
+      } else {
+        underperformanceStreak = 0;
+      }
     }
     worstRelative = Math.min(worstRelative, rel - 1);
-    relativePeak = Math.max(relativePeak, rel);
+    if (rel >= relativePeak) {
+      relativePeak = rel;
+      relativePeakDate = candidatePoints[i].date;
+      underwaterStartDate = null;
+    } else {
+      if (!underwaterStartDate) underwaterStartDate = relativePeakDate;
+      const start = new Date(`${underwaterStartDate}T00:00:00Z`);
+      const end = new Date(`${candidatePoints[i].date}T00:00:00Z`);
+      const months = (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth();
+      if (months > longestUnderwaterMonths) {
+        longestUnderwaterMonths = months;
+        longestUnderwaterStart = underwaterStartDate;
+        longestUnderwaterEnd = candidatePoints[i].date;
+      }
+    }
     worstRelativeDrawdown = Math.min(worstRelativeDrawdown, rel / relativePeak - 1);
   }
   const lastC = candidatePoints[n - 1];
@@ -1137,6 +1256,10 @@ function relativeEdge(candidatePoints, benchmarkPoints) {
     months: n,
     underperformanceMonths: underMonths,
     underperformanceRate: n > 1 ? underMonths / (n - 1) : null,
+    longestUnderperformanceStreak,
+    longestRelativeUnderwaterMonths: longestUnderwaterMonths,
+    longestRelativeUnderwaterStart: longestUnderwaterStart,
+    longestRelativeUnderwaterEnd: longestUnderwaterEnd,
     finalRelativeMultiple: lastB.value > 0 ? lastC.value / lastB.value : null,
     finalRelativeNav: lastB.nav > 0 ? lastC.nav / lastB.nav : null,
     worstRelativeGap: worstRelative,
@@ -1158,6 +1281,8 @@ function summarizePortfolios(portfolios, finalPrices, actionStats) {
       key,
       finalValue,
       contributed: portfolio.contributed,
+      fees: portfolio.fees,
+      costBps: portfolio.costBps,
       multiple,
       irr: xirr(flows),
       maxDrawdown: portfolio.maxDrawdown,
@@ -1176,7 +1301,7 @@ function summarizePortfolios(portfolios, finalPrices, actionStats) {
   });
 }
 
-function sensitivityGrid(data, startDate, monthlyAmount, states) {
+function sensitivityGrid(data, startDate, monthlyAmount, states, costBps = DEFAULT_COST_BPS) {
   const drawdownMultipliers = [0.8, 1, 1.2];
   const vixMultipliers = [0.8, 1, 1.2];
   const points = [];
@@ -1187,7 +1312,7 @@ function sensitivityGrid(data, startDate, monthlyAmount, states) {
         deepDrawdown: DEFAULT_THRESHOLDS.deepDrawdown * drawdownScale,
         panicVix: DEFAULT_THRESHOLDS.panicVix * vixScale,
       };
-      const { finalPrices, portfolios, actionCounts } = runBacktest(data, startDate, monthlyAmount, thresholds, states);
+      const { finalPrices, portfolios, actionCounts } = runBacktest(data, startDate, monthlyAmount, thresholds, states, null, costBps);
       const signal = portfolios.signal;
       points.push({
         drawdownThreshold: thresholds.deepDrawdown,
@@ -1273,13 +1398,13 @@ function trainScore(portfolios, finalPrices) {
   return (excess * (1 + Math.max(0, sharpe))) / ddPenalty;
 }
 
-function walkForward(data, startDate, monthlyAmount, states) {
+function walkForward(data, startDate, monthlyAmount, states, costBps = DEFAULT_COST_BPS) {
   const latest = (data.prices || []).at(-1)?.date;
   if (!latest) return [];
   return ["2010-01-01", "2015-01-01", "2020-01-01", "2025-01-01"].filter((split) => split > startDate && split < latest).map((split) => {
     let best = null;
     for (const thresholds of thresholdVariants()) {
-      const result = runBacktest(data, startDate, monthlyAmount, thresholds, states, split);
+      const result = runBacktest(data, startDate, monthlyAmount, thresholds, states, split, costBps);
       const score = trainScore(result.portfolios, result.finalPrices);
       const finalValue = valueOf(result.portfolios.signal, result.finalPrices);
       if (!best || score > best.trainScore) {
@@ -1291,8 +1416,8 @@ function walkForward(data, startDate, monthlyAmount, states) {
         };
       }
     }
-    const bestForward = runBacktest(data, split, monthlyAmount, best.thresholds, states);
-    const defaultForward = runBacktest(data, split, monthlyAmount, DEFAULT_THRESHOLDS, states);
+    const bestForward = runBacktest(data, split, monthlyAmount, best.thresholds, states, null, costBps);
+    const defaultForward = runBacktest(data, split, monthlyAmount, DEFAULT_THRESHOLDS, states, null, costBps);
     const bestSignal = valueOf(bestForward.portfolios.signal, bestForward.finalPrices);
     const bestQqq = valueOf(bestForward.portfolios.qqq, bestForward.finalPrices);
     const defaultSignal = valueOf(defaultForward.portfolios.signal, defaultForward.finalPrices);
@@ -1319,18 +1444,18 @@ function walkForward(data, startDate, monthlyAmount, states) {
   });
 }
 
-function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESHOLDS, states = null, endDate = null) {
+function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESHOLDS, states = null, endDate = null, costBps = DEFAULT_COST_BPS) {
   const { nasdaq, vix, capeLatestFirst } = data;
   const prices = data.prices || buildPrices(data.nasdaq, data.qqq, data.tqqq, data.rates);
   if (startDate > prices.at(-1).date) throw new HttpError(400, "Start is after the latest available market date.");
   const capeChrono = [...capeLatestFirst].reverse();
   const portfolios = {
-    qqq: emptyPortfolio(),
-    tqqq: emptyPortfolio(),
-    blend8020: emptyPortfolio(),
-    signal: emptyPortfolio(),
-    signalQqq: emptyPortfolio(),
-    signalTqqq: emptyPortfolio(),
+    qqq: emptyPortfolio(costBps),
+    tqqq: emptyPortfolio(costBps),
+    blend8020: emptyPortfolio(costBps),
+    signal: emptyPortfolio(costBps),
+    signalQqq: emptyPortfolio(costBps),
+    signalTqqq: emptyPortfolio(costBps),
   };
   let lastMonth = "";
   let startTime = null;
@@ -1338,6 +1463,9 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
   const capeCursor = { index: 0 };
   let executedThisMonth = false;
   let monthAction = null;
+  let monthDecisionDate = null;
+  let monthExecutionDate = null;
+  let pendingAction = null;
   let previousPrice = null;
   let lastSignalRecordedValue = null;
   const actionStats = emptyActionStats();
@@ -1353,7 +1481,10 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
     lastSignalRecordedValue = signalValue;
     const qqqPrice = previousPrice.qqqClose || null;
     for (const [key, portfolio] of Object.entries(portfolios)) {
-      record(portfolio, previousPrice, startTime, key.startsWith("signal") ? monthAction : null, qqqPrice);
+      record(portfolio, previousPrice, startTime, key.startsWith("signal") ? monthAction : null, qqqPrice, {
+        decisionDate: monthDecisionDate,
+        executionDate: monthExecutionDate,
+      });
     }
   };
 
@@ -1371,6 +1502,9 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
       lastMonth = month;
       executedThisMonth = false;
       monthAction = null;
+      monthDecisionDate = null;
+      monthExecutionDate = null;
+      pendingAction = null;
 
       for (const portfolio of Object.values(portfolios)) {
         addContribution(portfolio, monthlyAmount, price);
@@ -1382,27 +1516,31 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
       buyTQQQ(portfolios.blend8020, portfolios.blend8020.cash, price.tqqq);
     }
 
+    if (pendingAction && pendingAction.month === month) {
+      const priorAction = monthAction;
+      applySignalAction(portfolios.signal, pendingAction.decision, price, monthlyAmount);
+      applySignalQqqAction(portfolios.signalQqq, pendingAction.decision, price, monthlyAmount);
+      applySignalTqqqAction(portfolios.signalTqqq, pendingAction.decision, price, monthlyAmount);
+      signalMemory = memoryAfterAction(signalMemory, pendingAction.decision);
+      if (priorAction && priorAction !== pendingAction.decision.key && actionStats[priorAction]) {
+        actionStats[priorAction].count = Math.max(0, actionStats[priorAction].count - 1);
+      }
+      monthAction = pendingAction.decision.key;
+      monthDecisionDate = pendingAction.decisionDate;
+      monthExecutionDate = price.date;
+      actionStats[monthAction].count += 1;
+      executedThisMonth = true;
+      pendingAction = null;
+    }
+
     const state = states?.[i] || stateAt(i, price, nasdaq, vix, capeChrono, capeCursor);
     signalMemory = advanceSignalMonth(signalMemory, state, month, thresholds);
     const decision = calculateDecision(state, signalMemory, thresholds);
-    if (!executedThisMonth) {
-      executedThisMonth = true;
-      applySignalAction(portfolios.signal, decision, price, monthlyAmount);
-      applySignalQqqAction(portfolios.signalQqq, decision, price, monthlyAmount);
-      applySignalTqqqAction(portfolios.signalTqqq, decision, price, monthlyAmount);
-      signalMemory = memoryAfterAction(signalMemory, decision);
-      monthAction = decision.key;
-      actionStats[decision.key].count += 1;
+    if (!executedThisMonth && !pendingAction) {
+      pendingAction = { decision, decisionDate: price.date, month };
     } else if (shouldUpgradeMonthAction(monthAction, decision.key)) {
-      // Intra-month upgrade: catch mid-month crashes/bottoms that first-day sampling misses.
-      // Only apply the upgraded action once per upgrade step.
-      applySignalAction(portfolios.signal, decision, price, monthlyAmount);
-      applySignalQqqAction(portfolios.signalQqq, decision, price, monthlyAmount);
-      applySignalTqqqAction(portfolios.signalTqqq, decision, price, monthlyAmount);
-      signalMemory = memoryAfterAction(signalMemory, decision);
-      if (actionStats[monthAction]) actionStats[monthAction].count = Math.max(0, actionStats[monthAction].count - 1);
-      monthAction = decision.key;
-      actionStats[decision.key].count += 1;
+      // Signal is known after this close; the upgraded manual order executes next session.
+      pendingAction = { decision, decisionDate: price.date, month };
     }
 
     for (const portfolio of Object.values(portfolios)) {
@@ -1416,51 +1554,137 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
   return { finalPrices: previousPrice || prices.at(-1), portfolios, actionCounts, actionStats };
 }
 
-async function backtest({ start = "2000-01", monthly = 1000 } = {}) {
+function rebalanceStaticAllocation(portfolio, prices, allocation) {
+  const qqqWeight = Number(allocation?.qqqWeight);
+  const tqqqWeight = Number(allocation?.tqqqWeight);
+  if (!Number.isFinite(qqqWeight) || !Number.isFinite(tqqqWeight) || qqqWeight < 0 || tqqqWeight < 0 || qqqWeight + tqqqWeight > 1 + 1e-6) {
+    throw new Error("Static allocation weights must be finite, non-negative, and sum to no more than 1.");
+  }
+  const total = valueOf(portfolio, prices);
+  const targetTqqq = total * tqqqWeight;
+  const targetQqq = total * qqqWeight;
+  const currentTqqq = portfolio.tqqq * prices.tqqq;
+  const currentQqq = portfolio.qqq * prices.qqq;
+  if (currentTqqq > targetTqqq && currentTqqq > 0) sellTQQQ(portfolio, (currentTqqq - targetTqqq) / currentTqqq, prices.tqqq);
+  if (currentQqq > targetQqq) sellQQQ(portfolio, currentQqq - targetQqq, prices.qqq);
+  const nextTqqq = portfolio.tqqq * prices.tqqq;
+  if (nextTqqq < targetTqqq) buyTQQQ(portfolio, targetTqqq - nextTqqq, prices.tqqq);
+  const nextQqq = portfolio.qqq * prices.qqq;
+  if (nextQqq < targetQqq) buyQQQ(portfolio, targetQqq - nextQqq, prices.qqq);
+}
+
+function runStaticAllocation(data, startDate, monthlyAmount, allocation, costBps = DEFAULT_COST_BPS) {
+  const prices = data.prices || buildPrices(data.nasdaq, data.qqq, data.tqqq, data.rates);
+  const portfolio = emptyPortfolio(costBps);
+  let lastMonth = "";
+  let startTime = null;
+  let previousPrice = null;
+  for (const price of prices) {
+    if (price.date < startDate) continue;
+    if (startTime == null) startTime = new Date(`${price.date}T00:00:00Z`).getTime();
+    accrueCash(portfolio, price);
+    const month = price.date.slice(0, 7);
+    if (month !== lastMonth) {
+      if (previousPrice) record(portfolio, previousPrice, startTime, null, previousPrice.qqqClose || null);
+      lastMonth = month;
+      addContribution(portfolio, monthlyAmount, price);
+      rebalanceStaticAllocation(portfolio, price, allocation);
+    }
+    updateDrawdown(portfolio, price);
+    previousPrice = price;
+  }
+  if (previousPrice) record(portfolio, previousPrice, startTime, null, previousPrice.qqqClose || null);
+  return { portfolio, finalPrices: previousPrice || prices.at(-1) };
+}
+
+async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_COST_BPS } = {}) {
   const startDate = normalizeStart(start);
   const monthlyAmount = normalizeMonthly(monthly);
-  const data = await loadData();
+  const costBps = normalizeCostBps(cost);
+  const data = loadSnapshotData();
+  const dataSnapshotId = buildDataSnapshotId(data);
   const prices = buildPrices(data.nasdaq, data.qqq, data.tqqq, data.rates);
   data.prices = prices;
   const capeChrono = [...data.capeLatestFirst].reverse();
   const states = buildStates(prices, data.nasdaq, data.vix, capeChrono);
-  const { finalPrices, portfolios, actionStats } = runBacktest(data, startDate, monthlyAmount, DEFAULT_THRESHOLDS, states);
+  const { finalPrices, portfolios, actionStats } = runBacktest(data, startDate, monthlyAmount, DEFAULT_THRESHOLDS, states, null, costBps);
   const strategies = summarizePortfolios(portfolios, finalPrices, actionStats);
-  const byKey = Object.fromEntries(strategies.map((strategy) => [strategy.key, strategy]));
+  const dataQuality = buildDataQuality(data, prices);
+  const actualTqqqStart = dataQuality.tqqqActualStart || startDate;
+  const evidenceStart = startDate < actualTqqqStart ? actualTqqqStart : startDate;
+  const evidenceRun = evidenceStart === startDate
+    ? { finalPrices, portfolios, actionStats }
+    : runBacktest(data, evidenceStart, monthlyAmount, DEFAULT_THRESHOLDS, states, null, costBps);
+  const evidenceStrategies = summarizePortfolios(evidenceRun.portfolios, evidenceRun.finalPrices, evidenceRun.actionStats);
+  const evidenceByKey = Object.fromEntries(evidenceStrategies.map((strategy) => [strategy.key, strategy]));
+  const signalEvidence = evidenceByKey.signal;
+  const qqqEvidence = evidenceByKey.qqq;
+  const averageAllocation = signalEvidence.points.length
+    ? {
+      cashWeight: mean(signalEvidence.points.map((point) => point.cashWeight)),
+      qqqWeight: mean(signalEvidence.points.map((point) => point.qqqWeight)),
+      tqqqWeight: mean(signalEvidence.points.map((point) => point.tqqqWeight)),
+    }
+    : { cashWeight: 1, qqqWeight: 0, tqqqWeight: 0 };
+  const allocationMatchedRun = runStaticAllocation(data, evidenceStart, monthlyAmount, averageAllocation, costBps);
+  const allocationMatchedRisk = riskStats(allocationMatchedRun.portfolio.points);
+  const allocationMatchedFinalValue = valueOf(allocationMatchedRun.portfolio, allocationMatchedRun.finalPrices);
+  const signalVsStatic = relativeEdge(signalEvidence.points, allocationMatchedRun.portfolio.points);
   return {
     generatedAt: new Date().toISOString(),
+    rulesetId: RULESET_ID,
+    dataSnapshotId,
     start: startDate,
     monthly: monthlyAmount,
+    costBps,
+    executionLag: "nextTradingSession",
     staleSources: data.staleSources,
     end: finalPrices.date,
-    dataQuality: buildDataQuality(data, prices),
+    dataQuality,
     thresholds: DEFAULT_THRESHOLDS,
     headline: {
-      signalVsQqq: byKey.signal?.vsQqq || null,
-      signalMultiple: byKey.signal?.multiple ?? null,
-      qqqMultiple: byKey.qqq?.multiple ?? null,
-      signalMaxDrawdown: byKey.signal?.maxDrawdown ?? null,
-      qqqMaxDrawdown: byKey.qqq?.maxDrawdown ?? null,
-      signalIrr: byKey.signal?.irr ?? null,
-      qqqIrr: byKey.qqq?.irr ?? null,
-      bottomAttackCount: byKey.signal?.actionCounts?.bottomAttack ?? 0,
-      pauseMonths: (byKey.signal?.actionCounts?.pauseAtHigh || 0) + (byKey.signal?.actionCounts?.trimHeat || 0),
+      scopeStart: evidenceStart,
+      scopeEnd: evidenceRun.finalPrices.date,
+      syntheticExcluded: evidenceStart > startDate,
+      signalVsQqq: signalEvidence?.vsQqq || null,
+      signalMultiple: signalEvidence?.multiple ?? null,
+      qqqMultiple: qqqEvidence?.multiple ?? null,
+      signalMaxDrawdown: signalEvidence?.maxDrawdown ?? null,
+      qqqMaxDrawdown: qqqEvidence?.maxDrawdown ?? null,
+      signalIrr: signalEvidence?.irr ?? null,
+      qqqIrr: qqqEvidence?.irr ?? null,
+      signalSharpe: signalEvidence?.risk?.sharpe ?? null,
+      qqqSharpe: qqqEvidence?.risk?.sharpe ?? null,
+      bottomAttackCount: signalEvidence?.actionCounts?.bottomAttack ?? 0,
+      pauseMonths: (signalEvidence?.actionCounts?.pauseAtHigh || 0) + (signalEvidence?.actionCounts?.trimHeat || 0),
+      allocationMatched: {
+        diagnostic: true,
+        method: "exPostAverageCashQqqTqqqWeights",
+        averageAllocation,
+        finalValue: allocationMatchedFinalValue,
+        multiple: allocationMatchedRun.portfolio.contributed > 0 ? allocationMatchedFinalValue / allocationMatchedRun.portfolio.contributed : null,
+        maxDrawdown: allocationMatchedRun.portfolio.maxDrawdown,
+        sharpe: allocationMatchedRisk.sharpe,
+        signalVsStatic,
+      },
     },
     modelNotes: {
-      cape: `CAPE is S&P 500 Shiller PE, not Nasdaq-100 PE. Percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window. Cheap fires below the ${DEFAULT_THRESHOLDS.cheapCape}th percentile, or below the ${DEFAULT_THRESHOLDS.supportCape}th percentile when Nasdaq-100 is down ${Math.abs(DEFAULT_THRESHOLDS.supportDrawdown)}%+.`,
+      cape: `CAPE is S&P 500 Shiller PE, not Nasdaq-100 PE. Percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window. Cheap fires below the ${DEFAULT_THRESHOLDS.cheapCape}th percentile, or below the ${DEFAULT_THRESHOLDS.supportCape}th percentile when Nasdaq-100 is down ${Math.abs(DEFAULT_THRESHOLDS.supportDrawdown)}%+. The free historical table is not a point-in-time revision archive, so publication and revision bias remain a disclosed limitation.`,
       drawdown: `Drawdown uses a rolling ${ROLLING_HIGH_DAYS / 252}-year high of 5-day Nasdaq-100 averages. Deep <= ${DEFAULT_THRESHOLDS.deepDrawdown}%, mild <= ${DEFAULT_THRESHOLDS.mildDrawdown}%.`,
       vix: `VIX is S&P 500 implied vol, used as a cross-asset panic proxy. Panic threshold is ${DEFAULT_THRESHOLDS.panicVix} on the 5-day average.`,
-      cadence: "Monthly cash is contributed on the first trading day. Intra-month upgrades can raise the action to small-dip buy, bottom attack, or crash defense if conditions worsen after the open.",
-      costs: "QQQ/TQQQ use adjusted ETF closes when available; older pre-inception sections are synthetic. Synthetic QQQ adds a 0.7% dividend proxy. Synthetic TQQQ deducts 0.95% expense ratio plus approximate 2x financing cost. Cash earns FEDFUNDS when available, otherwise a coarse historical short-rate approximation.",
+      cadence: "Monthly cash is contributed on the first trading day. A signal observed at a daily close executes at the next trading session. Intra-month upgrades follow the same one-session lag.",
+      costs: `Each buy and sell includes ${costBps} bps of trading friction. QQQ/TQQQ use adjusted ETF closes when available; older pre-inception sections are synthetic. Synthetic QQQ adds a 0.7% dividend proxy. Synthetic TQQQ deducts 0.95% expense ratio plus approximate 2x financing cost. Cash earns FEDFUNDS when available, otherwise a coarse historical short-rate approximation.`,
       tqqqHoldingCosts: "Buying TQQQ shares with cash does not create daily broker margin calls. Fund leverage, derivatives, financing, fees, compounding, and tracking effects are embedded in actual adjusted TQQQ closes after inception and approximated in synthetic pre-inception data. Broker margin interest is excluded and should be added separately if TQQQ is bought with borrowed money.",
       wrappers: "Tactical QQQ and tactical TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash.",
-      limits: "No taxes, no slippage, no tracking-error residual after inception, no broker constraints. Attribution is path-linked, not causal. Past edge versus QQQ DCA is not a guarantee of future edge.",
+      sharpe: "Sharpe uses monthly unit-NAV excess returns over the modeled cash rate, annualized by sqrt(12).",
+      evidence: `The headline excludes synthetic TQQQ history and starts at ${evidenceStart}. The allocation-matched benchmark is an ex-post diagnostic rebalanced monthly to the signal strategy's average cash, QQQ, and TQQQ weights; it is not an investable pre-registered rule.`,
+      limits: "No taxes, no residual tracking error after inception, and no broker constraints. Attribution is path-linked, not causal. Past edge versus QQQ DCA is not a guarantee of future edge.",
       notAdvice: "This dashboard is a research and process tool, not investment advice.",
     },
     strategies,
-    sensitivity: sensitivityGrid(data, startDate, monthlyAmount, states),
+    sensitivity: sensitivityGrid(data, startDate, monthlyAmount, states, costBps),
     events: eventRecaps(strategies),
-    walkForward: walkForward(data, startDate, monthlyAmount, states),
+    walkForward: walkForward(data, startDate, monthlyAmount, states, costBps),
   };
 }
 
@@ -1468,13 +1692,19 @@ module.exports = {
   backtest,
   calculateDecision,
   decisionConfidence,
+  DEFAULT_COST_BPS,
   DEFAULT_THRESHOLDS,
+  RISK_POLICIES,
+  RULESET_ID,
+  buildDataSnapshotId,
   fetchText,
   loadData,
+  loadSnapshotData,
   marketSnapshot,
   parseCapeTable,
   fetchFredSeries,
   fetchYahooSeries,
   sendJson,
   signalGroups,
+  runBacktest,
 };

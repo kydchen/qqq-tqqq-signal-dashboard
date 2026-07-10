@@ -2,7 +2,7 @@ name: Update market snapshots
 
 on:
   schedule:
-    - cron: "22 8 2 * *"
+    - cron: "22 7 * * 2-6"
   workflow_dispatch:
 
 permissions:
@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: "20"
       - run: npm run update-data
-      - run: npm run check
+      - run: npm test
       - name: Commit snapshot changes
         run: |
           if git diff --quiet -- data; then

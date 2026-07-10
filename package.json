@@ -1,10 +1,11 @@
 {
   "name": "qqq-tqqq-signal-dashboard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
-  "description": "Bilingual QQQ/TQQQ three-signal dashboard with month-open DCA, intra-month upgrades, and decision-first UI.",
+  "description": "Local-first QQQ/TQQQ decision cockpit with versioned evidence, next-session execution, and manual order drafts.",
   "scripts": {
     "dev": "node dev-server.cjs",
+    "test": "node --test test/*.test.cjs && node scripts/check.cjs",
     "check": "node scripts/check.cjs",
     "check:live": "LIVE=1 node scripts/check.cjs",
     "update-data": "node scripts/update-data.cjs"

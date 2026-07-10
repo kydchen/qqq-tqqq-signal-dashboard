@@ -32,26 +32,68 @@ const copy = {
     decisionKicker: "本月有效动作",
     loadingAction: "加载中",
     loadingOperation: "正在拉取市场数据。",
-    confidenceLabel: "置信度",
+    confidenceLabel: "信号强度",
     confidenceLevels: { high: "高", medium: "中", low: "低" },
     lockedLabel: "月初锁定",
     liveLabel: "今日预览",
     upgradeLabel: "月内升级",
     upgradeYes: "是",
     upgradeNo: "否",
-    edgeKicker: "相对 QQQ 定投",
+    edgeKicker: "真实 TQQQ 样本证据",
     edgeEmpty: "回测加载后显示历史相对优势。",
-    edgeNote: (h) => `同起点同月投入下，三信号期末约为 QQQ 定投的 ${fmtNumber(h.signalVsQqq?.finalRelativeMultiple || 0, 2)} 倍。最大回撤 ${fmtPct((h.signalMaxDrawdown || 0) * 100)}，QQQ 定投 ${fmtPct((h.qqqMaxDrawdown || 0) * 100)}。`,
+    edgeNote: (h) => `${fmtDate(h.scopeStart)} 起仅使用真实 TQQQ 历史。三信号期末约为 QQQ 的 ${fmtNumber(h.signalVsQqq?.finalRelativeMultiple || 0, 2)} 倍；相对按平均现金、QQQ、TQQQ 权重月度再平衡的静态组合为 ${fmtNumber(h.allocationMatched?.signalVsStatic?.finalRelativeMultiple || 0, 2)} 倍。`,
     edgeStats: {
-      multiple: "相对倍数",
-      under: "跑输月份占比",
-      irrGap: "IRR 差",
-      bottoms: "大底次数",
+      multiple: "相对 QQQ",
+      allocationMatched: "相对均仓静态",
+      relativeDrawdown: "最大相对回撤",
+      underwater: "最长相对落后",
     },
-    disclaimer: "研究与流程工具，不是投资建议。不含税负、滑点、跟踪误差残差。历史相对 QQQ 的优势不保证未来重复。TQQQ 有大幅回撤与归零路径风险。",
+    disclaimer: "私人研究与手动执行工具，不是投资建议。订单只是下一交易时段的金额草稿，不会自动下单。历史相对优势不保证未来重复；TQQQ 可能出现极深回撤。",
+    execution: {
+      kicker: "手动执行",
+      title: "把本月动作换算成订单草稿",
+      note: "持仓、风险档和执行记录只保存在当前浏览器。系统使用最新收盘信号，订单按下一交易时段准备。",
+      localOnly: "仅存此浏览器",
+      riskProfile: "风险档",
+      cash: "现有现金（USD）",
+      qqqShares: "QQQ 份额",
+      tqqqShares: "TQQQ 份额",
+      monthly: "本月可投入（USD）",
+      fractional: "支持碎股",
+      profiles: {
+        conservative: ["保守", "只使用 QQQ 和现金；已有 TQQQ 会在草稿中降到 0%。"],
+        standard: ["标准", "TQQQ 上限 40%，常态地板 10%，大底后最高 40%。"],
+        aggressive: ["进攻", "沿用主策略：TQQQ 上限 90%，常态地板 20%。"],
+      },
+      plan: "生成订单草稿",
+      clear: "清除本地数据",
+      nextSession: "下一交易时段",
+      emptyTitle: "尚未生成订单",
+      waiting: "待输入",
+      ready: "可手动核对",
+      blocked: "数据未就绪",
+      noTrade: "本月不需要买卖；新增资金保留现金。",
+      retainedCash: "计划后现金",
+      floorGap: "距 TQQQ 地板",
+      estimatedCost: "估算摩擦",
+      quote: "报价日期",
+      ruleset: "规则版本",
+      calendar: "导出月初日历",
+      record: "记录本月计划",
+      recorded: "已记录",
+      actualNote: "实际执行备注",
+      actualPlaceholder: "例如：按草稿买入；或说明未执行原因",
+      journalKicker: "本地记录",
+      journalTitle: "最近执行记录",
+      journalEmpty: "还没有记录。生成草稿后可保存本月计划与实际执行备注。",
+      clearJournal: "清空记录",
+      buy: "买入",
+      sell: "卖出",
+      savedError: "浏览器拒绝了本地存储；订单仍可计算，但无法保存。",
+    },
     historyKicker: "动作轨迹",
     historyTitle: "近月有效动作",
-    historyNote: "绿色/红点表示月内发生过动作升级。策略按月初入金，危机月允许升级到更强买点或风控。",
+    historyNote: "标记表示月内发生过动作升级。信号在收盘后确认，手动订单统一放到下一交易时段。",
     upgradedMark: "升",
     capeLabel: "CAPE 分位",
     ddLabel: "纳指 100 回撤",
@@ -89,11 +131,12 @@ const copy = {
     sensitivityNote: "三信号策略用深跌阈值和恐慌 VIX 阈值做 ±20% 网格重跑。",
     startLabel: "起始时间",
     monthlyFixedLabel: "每月固定投入",
+    costLabel: "单边交易摩擦",
     trendLabel: "显示单位净值趋势线",
     scaleLabel: "对数纵轴",
     qqqAxisLabel: "右轴显示 QQQ 价格",
     actionMarkersLabel: "浮窗显示月度动作",
-    backtestNote: "回测固定每月 $1,000。图表比较 QQQ 定投、战术 QQQ、TQQQ 定投、战术 TQQQ、三信号混合。真实 ETF adjusted close 优先；TQQQ 成立前为合成路径。三信号策略月初入金，月内可升级到小底/大底/快崩。大底后 6 个月向约 90% TQQQ 靠拢，并保留 20% TQQQ 地板。归因是路径估算，不是因果 alpha。",
+    backtestNote: "回测固定每月 $1,000，使用版本化本地数据快照。信号在收盘后确认，下一交易时段执行；交易摩擦可切换。图表仍可查看合成历史，但顶部主结论只使用真实 TQQQ 样本。",
     workbenchTitle: "策略工作台",
     exportCsv: "导出 CSV",
     copyLink: "复制链接",
@@ -256,12 +299,12 @@ const copy = {
       irr: "IRR",
       maxDrawdown: "净值最大回撤",
       regression: "单位净值趋势年化",
-      sharpe: "Sharpe",
+      sharpe: "超额收益 Sharpe",
       ulcer: "Ulcer",
       bottomAttack: "大底次数",
       shortSample: "样本太短",
     },
-    meta: (data) => `生成时间 ${fmtDateTime(data.generatedAt)}；CAPE 日期 ${data.indicators.cape.date}；纳指最新日期 ${fmtDate(data.indicators.nasdaq100.date)}；低位信号 ${data.decision.lowSignalCount}/3。${data.staleSources?.length ? ` 使用旧数据：${data.staleSources.join("、")}。` : ""}`,
+    meta: (data) => `生成时间 ${fmtDateTime(data.generatedAt)}；规则 ${data.rulesetId || "--"}；数据 ${data.dataSnapshotId || "--"}；纳指最新 ${fmtDate(data.indicators.nasdaq100.date)}；低位信号 ${data.decision.lowSignalCount}/3。${data.staleSources?.length ? ` 使用旧数据：${data.staleSources.join("、")}。` : ""}`,
     capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}；滚动样本 ${cape.rollingMonths || 360} 个月；便宜上次 ${cape.lastCheap?.label || "无"}。`,
     ddNote: (ndx) => `5 日均值 ${fmtNumber(ndx.level5dAvg, 0)}；25 日变化 ${fmtPct(ndx.crash25dPct)}。`,
     vixNote: (vix) => `最新 ${vix.latest.toFixed(2)}；日期 ${vix.date}。`,
@@ -273,26 +316,68 @@ const copy = {
     decisionKicker: "Effective month action",
     loadingAction: "Loading",
     loadingOperation: "Fetching market data.",
-    confidenceLabel: "Confidence",
+    confidenceLabel: "Rule strength",
     confidenceLevels: { high: "High", medium: "Med", low: "Low" },
     lockedLabel: "Month-open lock",
     liveLabel: "Live preview",
     upgradeLabel: "Intra-month upgrade",
     upgradeYes: "Yes",
     upgradeNo: "No",
-    edgeKicker: "Vs QQQ DCA",
+    edgeKicker: "Real-TQQQ evidence",
     edgeEmpty: "Historical edge appears after the backtest loads.",
-    edgeNote: (h) => `With the same start and monthly cash, the three-signal book ends at about ${fmtNumber(h.signalVsQqq?.finalRelativeMultiple || 0, 2)}x QQQ DCA. Max drawdown ${fmtPct((h.signalMaxDrawdown || 0) * 100)} vs ${fmtPct((h.qqqMaxDrawdown || 0) * 100)} for QQQ DCA.`,
+    edgeNote: (h) => `Uses actual TQQQ history from ${fmtDate(h.scopeStart)}. The three-signal book ends at ${fmtNumber(h.signalVsQqq?.finalRelativeMultiple || 0, 2)}x QQQ and ${fmtNumber(h.allocationMatched?.signalVsStatic?.finalRelativeMultiple || 0, 2)}x a static mix rebalanced to its average cash, QQQ, and TQQQ weights.`,
     edgeStats: {
-      multiple: "Relative multiple",
-      under: "Underperform months",
-      irrGap: "IRR gap",
-      bottoms: "Bottom attacks",
+      multiple: "Vs QQQ",
+      allocationMatched: "Vs avg allocation",
+      relativeDrawdown: "Max relative drawdown",
+      underwater: "Longest underwater",
     },
-    disclaimer: "Research and process tool, not investment advice. No taxes, slippage, or residual tracking error. Historical edge versus QQQ DCA can fail out of sample. TQQQ can suffer severe drawdowns and path-to-zero risk.",
+    disclaimer: "Private research and manual-execution tool, not investment advice. Orders are next-session drafts and are never sent to a broker. Historical edge may fail; TQQQ can suffer extremely deep drawdowns.",
+    execution: {
+      kicker: "Manual execution",
+      title: "Turn this month's action into an order draft",
+      note: "Holdings, risk policy, and records stay in this browser. The signal uses the latest close; the draft is for the next trading session.",
+      localOnly: "Stored in this browser",
+      riskProfile: "Risk policy",
+      cash: "Cash (USD)",
+      qqqShares: "QQQ shares",
+      tqqqShares: "TQQQ shares",
+      monthly: "Available this month (USD)",
+      fractional: "Fractional shares supported",
+      profiles: {
+        conservative: ["Conservative", "QQQ and cash only; the draft reduces any existing TQQQ to 0%."],
+        standard: ["Standard", "TQQQ cap 40%, normal floor 10%, post-bottom cap 40%."],
+        aggressive: ["Aggressive", "Current main policy: TQQQ cap 90% and normal floor 20%."],
+      },
+      plan: "Build order draft",
+      clear: "Clear local data",
+      nextSession: "Next trading session",
+      emptyTitle: "No order draft yet",
+      waiting: "Waiting",
+      ready: "Ready to review",
+      blocked: "Data not ready",
+      noTrade: "No trade is required this month; keep the new cash uninvested.",
+      retainedCash: "Cash after plan",
+      floorGap: "TQQQ floor gap",
+      estimatedCost: "Estimated friction",
+      quote: "Quote date",
+      ruleset: "Ruleset",
+      calendar: "Export month-open calendar",
+      record: "Record monthly plan",
+      recorded: "Recorded",
+      actualNote: "Actual execution note",
+      actualPlaceholder: "For example: followed the draft, or why no trade was made",
+      journalKicker: "Local journal",
+      journalTitle: "Recent execution records",
+      journalEmpty: "No records yet. Build a draft to save the monthly plan and your actual execution note.",
+      clearJournal: "Clear records",
+      buy: "Buy",
+      sell: "Sell",
+      savedError: "This browser blocked local storage. Orders still calculate but cannot be saved.",
+    },
     historyKicker: "Action path",
     historyTitle: "Recent effective actions",
-    historyNote: "A mark means the month upgraded after the open. Cash is contributed on the first trading day. Crisis months may upgrade to a stronger buy or risk cut.",
+    historyNote: "A mark means the action upgraded during the month. Signals are confirmed after the close and manual orders use the next trading session.",
     upgradedMark: "up",
     capeLabel: "CAPE percentile",
     ddLabel: "Nasdaq-100 drawdown",
@@ -330,11 +415,12 @@ const copy = {
     sensitivityNote: "The signal strategy is rerun on a +/-20% grid for deep-drawdown and panic-VIX thresholds.",
     startLabel: "Start date",
     monthlyFixedLabel: "Fixed monthly buy",
+    costLabel: "One-way trading friction",
     trendLabel: "Show unit-NAV trend",
     scaleLabel: "Log y-axis",
     qqqAxisLabel: "Show QQQ price axis",
     actionMarkersLabel: "Show actions in tooltip",
-    backtestNote: "Backtest uses a fixed $1,000 monthly contribution. Compare QQQ DCA, Tactical QQQ, TQQQ DCA, Tactical TQQQ, and the three-signal mix. Adjusted ETF closes are preferred; pre-TQQQ history is synthetic. The signal book funds on month-open and can upgrade mid-month to small-dip, bottom-attack, or crash defense. Post-bottom months target about 90% TQQQ with a 20% floor. Attribution is path-linked, not causal alpha.",
+    backtestNote: "Backtests use a fixed $1,000 monthly contribution and versioned local snapshots. Signals are known after the close and execute next session; trading friction is selectable. The chart can still show synthetic history, but the headline only uses actual TQQQ history.",
     workbenchTitle: "Strategy workbench",
     exportCsv: "Export CSV",
     copyLink: "Copy link",
@@ -497,12 +583,12 @@ const copy = {
       irr: "IRR",
       maxDrawdown: "NAV max drawdown",
       regression: "Unit-NAV trend annualized",
-      sharpe: "Sharpe",
+      sharpe: "Excess-return Sharpe",
       ulcer: "Ulcer",
       bottomAttack: "Bottom attacks",
       shortSample: "Too short",
     },
-    meta: (data) => `Generated ${fmtDateTime(data.generatedAt)}; CAPE date ${data.indicators.cape.date}; Nasdaq latest ${fmtDate(data.indicators.nasdaq100.date)}; low signals ${data.decision.lowSignalCount}/3.${data.staleSources?.length ? ` Stale: ${data.staleSources.join(", ")}.` : ""}`,
+    meta: (data) => `Generated ${fmtDateTime(data.generatedAt)}; rules ${data.rulesetId || "--"}; data ${data.dataSnapshotId || "--"}; Nasdaq ${fmtDate(data.indicators.nasdaq100.date)}; low signals ${data.decision.lowSignalCount}/3.${data.staleSources?.length ? ` Stale: ${data.staleSources.join(", ")}.` : ""}`,
     capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}; rolling sample ${cape.rollingMonths || 360} months; last cheap ${cape.lastCheap?.label || "none"}.`,
     ddNote: (ndx) => `5-day average ${fmtNumber(ndx.level5dAvg, 0)}; 25-day change ${fmtPct(ndx.crash25dPct)}.`,
     vixNote: (vix) => `Latest ${vix.latest.toFixed(2)}; date ${vix.date}.`,
@@ -535,6 +621,9 @@ let errorMessage = "";
 let backtestRequestId = 0;
 let resizeFrame = 0;
 let workbenchView = "positions";
+let currentOrderPlan = null;
+const ACCOUNT_STORAGE_KEY = "qqq-tqqq-account-v1";
+const JOURNAL_STORAGE_KEY = "qqq-tqqq-journal-v1";
 
 function fmtPct(n, digits = 1) {
   return `${Number(n).toFixed(digits)}%`;
@@ -542,6 +631,10 @@ function fmtPct(n, digits = 1) {
 
 function fmtMoney(n) {
   return `$${Math.round(n).toLocaleString("en-US")}`;
+}
+
+function fmtMoneyPrecise(n) {
+  return `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmtSignedMoney(n) {
@@ -581,6 +674,212 @@ function escapeHtml(value) {
     "\"": "&quot;",
     "'": "&#39;",
   }[char]));
+}
+
+function readLocalJson(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key));
+    return value == null ? fallback : value;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function accountFromForm() {
+  return {
+    profile: $("riskProfileInput").value,
+    cash: $("cashInput").value,
+    qqqShares: $("qqqSharesInput").value,
+    tqqqShares: $("tqqqSharesInput").value,
+    monthlyContribution: $("monthlyContributionInput").value,
+    fractionalShares: $("fractionalSharesInput").checked,
+  };
+}
+
+function restoreAccountForm() {
+  const account = readLocalJson(ACCOUNT_STORAGE_KEY, null);
+  if (!account || typeof account !== "object") return;
+  if (["conservative", "standard", "aggressive"].includes(account.profile)) $("riskProfileInput").value = account.profile;
+  for (const [id, key] of [["cashInput", "cash"], ["qqqSharesInput", "qqqShares"], ["tqqqSharesInput", "tqqqShares"], ["monthlyContributionInput", "monthlyContribution"]]) {
+    if (Number.isFinite(Number(account[key])) && Number(account[key]) >= 0) $(id).value = String(account[key]);
+  }
+  $("fractionalSharesInput").checked = account.fractionalShares !== false;
+}
+
+function renderRiskProfileNote() {
+  const profile = $("riskProfileInput").value;
+  $("riskProfileNote").textContent = copy[lang].execution.profiles[profile]?.[1] || "";
+}
+
+function showAccountError(message = "") {
+  $("accountError").hidden = !message;
+  $("accountError").textContent = message;
+}
+
+function renderOrderDraft() {
+  const t = copy[lang].execution;
+  const status = $("orderStatus");
+  status.className = "order-status";
+  if (!currentOrderPlan) {
+    const blocked = marketData && (marketData.decision?.available === false || marketData.executionReady === false);
+    $("orderTitle").textContent = blocked ? t.blocked : t.emptyTitle;
+    status.textContent = blocked ? t.blocked : t.waiting;
+    if (blocked) status.classList.add("blocked");
+    $("orderMeta").textContent = marketData
+      ? `${t.quote}: ${marketData.quotes?.qqq?.date || "--"} · ${t.ruleset}: ${marketData.rulesetId || "--"}`
+      : "";
+    $("orderSummary").innerHTML = blocked
+      ? `<p class="small-note">${escapeHtml(lang === "zh" ? "关键行情或信号数据未就绪，订单功能已关闭。" : "Critical quote or signal data is not ready, so order drafting is disabled.")}</p>`
+      : "";
+    $("recordPlanBtn").disabled = true;
+    return;
+  }
+  status.textContent = t.ready;
+  status.classList.add("ready");
+  $("orderTitle").textContent = actionTitle(currentOrderPlan.decisionKey);
+  $("orderMeta").textContent = `${t.quote}: ${currentOrderPlan.quoteDate || "--"} · ${t.ruleset}: ${currentOrderPlan.rulesetId} · ${currentOrderPlan.costBps} bp`;
+  const rows = currentOrderPlan.orders.map((order) => {
+    const side = order.side === "BUY" ? t.buy : t.sell;
+    const sideClass = order.side === "BUY" ? "buy" : "sell";
+    return `<div class="order-row">
+      <span class="order-side ${sideClass}">${side}</span>
+      <div class="order-main"><strong>${order.symbol}</strong><span>${fmtNumber(order.shares, order.shares % 1 ? 3 : 0)} ${lang === "zh" ? "份" : "shares"} @ ${fmtMoneyPrecise(order.price)}</span></div>
+      <div class="order-amount"><strong>${fmtMoney(order.notional)}</strong><span>${t.estimatedCost} ${fmtMoneyPrecise(order.estimatedCost)}</span></div>
+    </div>`;
+  }).join("");
+  const noTrade = currentOrderPlan.orders.length ? "" : `<p class="small-note">${t.noTrade}</p>`;
+  $("orderSummary").innerHTML = `${rows}${noTrade}
+    <div class="order-total-row"><span>${t.retainedCash}</span><strong>${fmtMoney(currentOrderPlan.retainedCash)}</strong></div>
+    <div class="order-total-row"><span>${t.floorGap}</span><strong>${fmtMoney(currentOrderPlan.distanceToTqqqFloor)}</strong></div>`;
+  $("recordPlanBtn").disabled = false;
+}
+
+function planCurrentOrders(event) {
+  event.preventDefault();
+  showAccountError();
+  try {
+    if (!marketData?.decision?.available || !marketData.executionReady) throw new Error(copy[lang].execution.blocked);
+    const account = accountFromForm();
+    const policy = marketData.riskPolicies?.[account.profile];
+    const plan = ExecutionPlanner.planOrders({
+      account,
+      policy,
+      decision: marketData.decision,
+      quotes: marketData.quotes,
+      costBps: Number($("costInput").value),
+    });
+    currentOrderPlan = {
+      ...plan,
+      decisionKey: marketData.decision.key,
+      profile: account.profile,
+      rulesetId: marketData.rulesetId,
+      dataSnapshotId: marketData.dataSnapshotId,
+      generatedAt: new Date().toISOString(),
+    };
+    if (!writeLocalJson(ACCOUNT_STORAGE_KEY, account)) showAccountError(copy[lang].execution.savedError);
+    renderOrderDraft();
+  } catch (error) {
+    currentOrderPlan = null;
+    showAccountError(error.message);
+    renderOrderDraft();
+  }
+}
+
+function downloadText(filename, text, type) {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportMonthlyCalendar() {
+  const text = ExecutionPlanner.calendarIcs({ lang });
+  downloadText("qqq-tqqq-monthly-review.ics", text, "text/calendar;charset=utf-8");
+}
+
+function readJournal() {
+  const entries = readLocalJson(JOURNAL_STORAGE_KEY, []);
+  return Array.isArray(entries) ? entries : [];
+}
+
+function recordCurrentPlan() {
+  if (!currentOrderPlan) return;
+  const entry = {
+    id: `${Date.now()}`,
+    recordedAt: new Date().toISOString(),
+    decisionKey: currentOrderPlan.decisionKey,
+    profile: currentOrderPlan.profile,
+    rulesetId: currentOrderPlan.rulesetId,
+    dataSnapshotId: currentOrderPlan.dataSnapshotId,
+    quoteDate: currentOrderPlan.quoteDate,
+    orders: currentOrderPlan.orders,
+    retainedCash: currentOrderPlan.retainedCash,
+    actualNote: $("actualNoteInput").value.trim(),
+  };
+  const entries = [entry, ...readJournal()].slice(0, 24);
+  if (!writeLocalJson(JOURNAL_STORAGE_KEY, entries)) {
+    showAccountError(copy[lang].execution.savedError);
+    return;
+  }
+  $("recordPlanBtn").textContent = copy[lang].execution.recorded;
+  setTimeout(() => { if ($("recordPlanBtn")) $("recordPlanBtn").textContent = copy[lang].execution.record; }, 1200);
+  renderJournal();
+}
+
+function renderJournal() {
+  const t = copy[lang].execution;
+  const entries = readJournal().slice(0, 6);
+  if (!entries.length) {
+    $("journalEntries").innerHTML = `<p class="small-note">${t.journalEmpty}</p>`;
+    return;
+  }
+  $("journalEntries").innerHTML = entries.map((entry) => {
+    const orders = (entry.orders || []).map((order) => `${order.side === "BUY" ? t.buy : t.sell} ${fmtNumber(order.shares, order.shares % 1 ? 3 : 0)} ${order.symbol}`).join(" · ") || t.noTrade;
+    const profile = t.profiles[entry.profile]?.[0] || entry.profile;
+    return `<article class="journal-entry">
+      <strong>${escapeHtml(fmtDateTime(entry.recordedAt))} · ${escapeHtml(actionTitle(entry.decisionKey))}</strong>
+      <span>${escapeHtml(profile)} · ${escapeHtml(orders)}</span>
+      <small>${escapeHtml(entry.actualNote || "-")}</small>
+    </article>`;
+  }).join("");
+}
+
+function clearAccountData() {
+  const message = lang === "zh" ? "清除当前浏览器保存的持仓输入？执行记录不会被删除。" : "Clear saved holdings from this browser? Journal records will remain.";
+  if (!window.confirm(message)) return;
+  try { localStorage.removeItem(ACCOUNT_STORAGE_KEY); } catch {}
+  $("riskProfileInput").value = "standard";
+  $("cashInput").value = "0";
+  $("qqqSharesInput").value = "0";
+  $("tqqqSharesInput").value = "0";
+  $("monthlyContributionInput").value = "1000";
+  $("fractionalSharesInput").checked = true;
+  $("actualNoteInput").value = "";
+  currentOrderPlan = null;
+  showAccountError();
+  renderRiskProfileNote();
+  renderOrderDraft();
+}
+
+function clearJournal() {
+  const message = lang === "zh" ? "永久清空当前浏览器中的执行记录？" : "Permanently clear execution records from this browser?";
+  if (!window.confirm(message)) return;
+  try { localStorage.removeItem(JOURNAL_STORAGE_KEY); } catch {}
+  renderJournal();
 }
 
 function hasRegression(strategy) {
@@ -631,6 +930,8 @@ function applyUrlParams() {
   if (urlLang === "zh" || urlLang === "en") lang = urlLang;
   const start = params.get("start");
   if (start && optionExists($("startInput"), start)) $("startInput").value = start;
+  const cost = params.get("cost");
+  if (cost && optionExists($("costInput"), cost)) $("costInput").value = cost;
   const strategyParam = params.get("strategies");
   if (strategyParam) {
     const next = strategyParam.split(",").filter((key) => visibleStrategySet.has(key));
@@ -647,6 +948,7 @@ function applyUrlParams() {
 function updateShareUrl() {
   const params = new URLSearchParams();
   params.set("start", $("startInput").value);
+  params.set("cost", $("costInput").value);
   params.set("lang", lang);
   params.set("strategies", [...selected].filter((key) => visibleStrategySet.has(key)).join(","));
   if ($("trendInput").checked) params.set("trend", "1");
@@ -665,6 +967,7 @@ function setChartState(message = "") {
 
 function setBacktestLoading(on) {
   $("startInput").disabled = on;
+  $("costInput").disabled = on;
   if (on) setChartState(copy[lang].loadingBacktest);
 }
 
@@ -718,6 +1021,30 @@ function renderStatic() {
   $("upgradeLabel").textContent = t.upgradeLabel;
   $("edgeKicker").textContent = t.edgeKicker;
   $("disclaimer").textContent = t.disclaimer;
+  const execution = t.execution;
+  $("executionKicker").textContent = execution.kicker;
+  $("executionTitle").textContent = execution.title;
+  $("executionNote").textContent = execution.note;
+  $("localOnlyBadge").textContent = execution.localOnly;
+  $("riskProfileLabel").textContent = execution.riskProfile;
+  $("cashInputLabel").textContent = execution.cash;
+  $("qqqSharesLabel").textContent = execution.qqqShares;
+  $("tqqqSharesLabel").textContent = execution.tqqqShares;
+  $("monthlyInputLabel").textContent = execution.monthly;
+  $("fractionalSharesLabel").textContent = execution.fractional;
+  $("riskConservativeOption").textContent = execution.profiles.conservative[0];
+  $("riskStandardOption").textContent = execution.profiles.standard[0];
+  $("riskAggressiveOption").textContent = execution.profiles.aggressive[0];
+  $("planOrdersBtn").textContent = execution.plan;
+  $("clearAccountBtn").textContent = execution.clear;
+  $("orderKicker").textContent = execution.nextSession;
+  $("calendarBtn").textContent = execution.calendar;
+  $("recordPlanBtn").textContent = execution.record;
+  $("actualNoteLabel").textContent = execution.actualNote;
+  $("actualNoteInput").placeholder = execution.actualPlaceholder;
+  $("journalKicker").textContent = execution.journalKicker;
+  $("journalTitle").textContent = execution.journalTitle;
+  $("clearJournalBtn").textContent = execution.clearJournal;
   $("historyKicker").textContent = t.historyKicker;
   $("historyTitle").textContent = t.historyTitle;
   $("historyNote").textContent = t.historyNote;
@@ -739,6 +1066,7 @@ function renderStatic() {
   $("backtestTitle").textContent = t.backtestTitle;
   $("startLabel").textContent = t.startLabel;
   $("monthlyFixedLabel").textContent = t.monthlyFixedLabel;
+  $("costLabel").textContent = t.costLabel;
   $("trendLabel").textContent = t.trendLabel;
   $("scaleLabel").textContent = t.scaleLabel;
   $("qqqAxisLabel").textContent = t.qqqAxisLabel;
@@ -763,6 +1091,9 @@ function renderStatic() {
     $("operation").textContent = t.loadingOperation;
   }
   renderMarket();
+  renderRiskProfileNote();
+  renderOrderDraft();
+  renderJournal();
   renderStrategyToggles();
   renderBacktest();
 }
@@ -847,14 +1178,12 @@ function renderEdgeCard() {
   const rel = headline.signalVsQqq.finalRelativeMultiple;
   $("edgeMultiple").textContent = `${fmtNumber(rel, 2)}x`;
   $("edgeNote").textContent = t.edgeNote(headline);
-  const irrGap = (headline.signalIrr != null && headline.qqqIrr != null)
-    ? headline.signalIrr - headline.qqqIrr
-    : null;
+  const allocationMatchedRel = headline.allocationMatched?.signalVsStatic?.finalRelativeMultiple;
   $("edgeStats").innerHTML = `
     <div><span>${t.edgeStats.multiple}</span><strong>${fmtNumber(rel, 2)}x</strong></div>
-    <div><span>${t.edgeStats.under}</span><strong>${fmtPct((headline.signalVsQqq.underperformanceRate || 0) * 100, 0)}</strong></div>
-    <div><span>${t.edgeStats.irrGap}</span><strong>${irrGap == null ? "--" : fmtSignedPct(irrGap * 100)}</strong></div>
-    <div><span>${t.edgeStats.bottoms}</span><strong>${headline.bottomAttackCount || 0}</strong></div>
+    <div><span>${t.edgeStats.allocationMatched}</span><strong>${allocationMatchedRel == null ? "--" : `${fmtNumber(allocationMatchedRel, 2)}x`}</strong></div>
+    <div><span>${t.edgeStats.relativeDrawdown}</span><strong>${fmtPct((headline.signalVsQqq.maxRelativeDrawdown || 0) * 100)}</strong></div>
+    <div><span>${t.edgeStats.underwater}</span><strong>${headline.signalVsQqq.longestRelativeUnderwaterMonths || 0} ${lang === "zh" ? "个月" : "mo"}</strong></div>
   `;
 }
 
@@ -928,14 +1257,22 @@ function renderMarket() {
   const decision = marketData.decision;
   const text = t.decisions[decision.key] || t.decisions.normalDca;
   $("decisionPanel").style.setProperty("--decision-color", actionVisuals[decision.key]?.color || colors.signal);
-  $("action").textContent = text[0];
-  $("operation").textContent = text[1];
-  $("risk").textContent = text[2];
+  if (decision.available === false) {
+    $("action").textContent = t.execution.blocked;
+    $("operation").textContent = lang === "zh"
+      ? `关键数据正在使用旧快照：${decision.blockedSources.join("、")}。本月动作仅供历史参考。`
+      : `Critical inputs are using stale snapshots: ${decision.blockedSources.join(", ")}. The action is historical context only.`;
+    $("risk").textContent = lang === "zh" ? "数据恢复前不生成订单草稿。" : "No order draft is produced until the data recovers.";
+  } else {
+    $("action").textContent = text[0];
+    $("operation").textContent = text[1];
+    $("risk").textContent = text[2];
+  }
 
-  const confidence = decision.confidence || { level: "medium", score: 0.5 };
+  const confidence = decision.confidence || { level: "medium" };
   $("confidencePill").hidden = false;
   $("confidencePill").dataset.level = confidence.level;
-  $("confidenceValue").textContent = `${t.confidenceLevels[confidence.level] || confidence.level} ${fmtNumber(confidence.score * 100, 0)}`;
+  $("confidenceValue").textContent = t.confidenceLevels[confidence.level] || confidence.level;
 
   $("cadenceRow").hidden = false;
   $("lockedValue").textContent = actionTitle(decision.lockedKey || decision.key);
@@ -957,6 +1294,7 @@ function renderMarket() {
   renderDecisionHistory();
   renderEdgeCard();
   renderExecutionGuides();
+  renderOrderDraft();
 }
 
 function renderStrategyToggles() {
@@ -1295,11 +1633,15 @@ function csvCell(value) {
 
 function exportCsv() {
   if (!backtestData) return;
-  const headers = ["date", "strategy", "value", "nav", "cash", "qqq_value", "tqqq_value", "cash_weight", "qqq_weight", "tqqq_weight", "action_key", "qqq_price", "tqqq_source"];
+  const headers = ["ruleset_id", "data_snapshot_id", "cost_bps", "execution_lag", "date", "strategy", "value", "nav", "cash", "qqq_value", "tqqq_value", "cash_weight", "qqq_weight", "tqqq_weight", "fees", "action_key", "action_decision_date", "action_execution_date", "qqq_price", "tqqq_source"];
   const rows = [headers];
   for (const strategy of visibleStrategies()) {
     for (const point of strategy.points) {
       rows.push([
+        backtestData.rulesetId,
+        backtestData.dataSnapshotId,
+        backtestData.costBps,
+        backtestData.executionLag,
         point.date,
         strategy.key,
         Math.round(point.value * 100) / 100,
@@ -1310,7 +1652,10 @@ function exportCsv() {
         point.cashWeight,
         point.qqqWeight,
         point.tqqqWeight,
+        point.fees,
         point.actionKey || "",
+        point.actionDecisionDate || "",
+        point.actionExecutionDate || "",
         point.qqqPrice || "",
         point.tqqqSource || "",
       ]);
@@ -1600,9 +1945,10 @@ async function loadMarket() {
 async function loadBacktest() {
   const requestId = ++backtestRequestId;
   const start = $("startInput").value;
+  const cost = $("costInput").value;
   setBacktestLoading(true);
   try {
-    const data = await fetchJson(`/api/backtest?start=${encodeURIComponent(start)}`);
+    const data = await fetchJson(`/api/backtest?start=${encodeURIComponent(start)}&cost=${encodeURIComponent(cost)}`);
     if (requestId !== backtestRequestId) return;
     backtestData = data;
     if (marketData) clearError();
@@ -1631,6 +1977,12 @@ $("startInput").addEventListener("change", () => {
   updateShareUrl();
   loadBacktest();
 });
+$("costInput").addEventListener("change", () => {
+  currentOrderPlan = null;
+  updateShareUrl();
+  renderOrderDraft();
+  loadBacktest();
+});
 $("trendInput").addEventListener("change", () => {
   updateShareUrl();
   renderBacktest();
@@ -1648,6 +2000,26 @@ $("actionsInput").addEventListener("change", (event) => {
   updateShareUrl();
   renderBacktest();
 });
+$("accountForm").addEventListener("submit", planCurrentOrders);
+for (const id of ["cashInput", "qqqSharesInput", "tqqqSharesInput", "monthlyContributionInput"]) {
+  $(id).addEventListener("input", () => {
+    currentOrderPlan = null;
+    renderOrderDraft();
+  });
+}
+$("fractionalSharesInput").addEventListener("change", () => {
+  currentOrderPlan = null;
+  renderOrderDraft();
+});
+$("riskProfileInput").addEventListener("change", () => {
+  currentOrderPlan = null;
+  renderRiskProfileNote();
+  renderOrderDraft();
+});
+$("clearAccountBtn").addEventListener("click", clearAccountData);
+$("calendarBtn").addEventListener("click", exportMonthlyCalendar);
+$("recordPlanBtn").addEventListener("click", recordCurrentPlan);
+$("clearJournalBtn").addEventListener("click", clearJournal);
 window.addEventListener("resize", () => {
   if (!backtestData || resizeFrame) return;
   resizeFrame = requestAnimationFrame(() => {
@@ -1658,5 +2030,6 @@ window.addEventListener("resize", () => {
 });
 
 applyUrlParams();
+restoreAccountForm();
 renderStatic();
 loadAll();

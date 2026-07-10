@@ -1,6 +1,6 @@
-# QQQ/TQQQ Signal Dashboard
+# QQQ/TQQQ Decision Cockpit
 
-Bilingual QQQ/TQQQ dashboard for three signals, with monthly contributions and intra-month upgrades:
+Local-first bilingual QQQ/TQQQ decision cockpit for three signals, monthly contributions, and intra-month upgrades:
 
 - CAPE rolling 30-year percentile (S&P broad valuation anchor, not Nasdaq PE)
 - Nasdaq-100 rolling 5-year drawdown, mild-drawdown cue, and fast-crash check
@@ -17,8 +17,23 @@ The workbench adds:
 - Walk-forward threshold validation using risk-adjusted excess versus QQQ.
 - Data-quality coverage showing real ETF history versus synthetic pre-inception ranges.
 - Execution-mode cards explaining Tactical QQQ and Tactical TQQQ as single-ETF reference modes.
-- Headline edge card versus QQQ DCA, confidence, month-open lock, and live preview.
+- Actual-TQQQ headline evidence, an average-allocation static diagnostic, longest relative underperformance, and excess-return Sharpe.
+- Conservative, standard, and aggressive risk policies that change exposure caps without changing signal thresholds.
+- Browser-local holdings, next-session manual order drafts, recurring calendar export, and an execution journal.
 - CSV export and shareable URLs.
+
+Account inputs and journal entries stay in browser `localStorage`. They are never sent to the API, and this app never sends an order to a broker.
+
+## Trust contract
+
+- Ruleset: `2026-07-v3`.
+- A signal observed at a daily close executes at the next trading session; the backtest never trades at the same close that generated the signal.
+- Backtests use bundled, versioned snapshots instead of live upstream requests, so the same commit reproduces the same result.
+- The default view starts on TQQQ's first actual-history date, 2010-02-11. Earlier audit windows remain available, and their headline evidence excludes synthetic TQQQ history.
+- Every buy and sell includes selectable 0, 5, or 10 basis points of friction; 5 bps is the default.
+- Critical stale signal data disables the current action. Stale ETF quotes disable order drafting.
+- Sharpe uses monthly unit-NAV excess returns over the modeled cash rate.
+- The allocation-matched benchmark is an ex-post diagnostic using the signal strategy's average cash, QQQ, and TQQQ weights; it is not a pre-registered investable rule.
 
 ## Signal Rule
 
@@ -46,7 +61,14 @@ Execution:
 
 - Monthly cash is contributed on the first trading day.
 - Intra-month upgrades can raise the action to small-dip buy, bottom attack, or crash defense if conditions worsen after the open.
+- The action executes at the next trading session in backtests and appears as a manual next-session draft in the cockpit.
 - Quiet VIX alone no longer forces pause or heat trim.
+
+Risk policies reuse these same signals:
+
+- Conservative: QQQ and cash only; TQQQ cap 0%.
+- Standard: TQQQ cap 40%, normal floor 10%, post-bottom cap 40%.
+- Aggressive: current main policy, with a 20% normal floor and 90% post-bottom cap.
 
 Position rules for the mixed signal strategy:
 
@@ -87,6 +109,7 @@ http://127.0.0.1:8765
 ## Check
 
 ```bash
+npm test
 npm run check
 ```
 
@@ -120,9 +143,11 @@ Import the repository into Vercel. The static page is `index.html`; serverless A
 - VIX: Yahoo Finance `^VIX`
 - Short rate: FRED `FEDFUNDS`
 - CAPE/Shiller PE: Multpl monthly table
-- Static fallback snapshots live in `data/` and are refreshed by the monthly GitHub Action.
+- Static fallback snapshots live in `data/` and are refreshed after US trading days by GitHub Actions. Pull requests and pushes to `main` run deterministic tests.
 
-Backtests use adjusted QQQ/TQQQ closes when available. Before QQQ/TQQQ live history exists, QQQ is proxied from Nasdaq-100 with a 0.7% annual dividend approximation and TQQQ is synthesized from 3x daily Nasdaq-100 returns after a 0.95% annual expense-ratio drag and approximate 2x financing cost. Cash earns FRED FEDFUNDS when available, with a coarse historical fallback. The hidden 80/20 compatibility variant allocates each new monthly contribution 80% to QQQ and 20% to TQQQ, without rebalancing existing holdings. Backtests still exclude tax, slippage, borrowing limits, tracking error, and live broker execution constraints.
+Backtests use adjusted QQQ/TQQQ closes when available. Before QQQ/TQQQ live history exists, QQQ is proxied from Nasdaq-100 with a 0.7% annual dividend approximation and TQQQ is synthesized from 3x daily Nasdaq-100 returns after a 0.95% annual expense-ratio drag and approximate 2x financing cost. Cash earns FRED FEDFUNDS when available, with a coarse historical fallback. The hidden 80/20 compatibility variant allocates each new monthly contribution 80% to QQQ and 20% to TQQQ, without rebalancing existing holdings. Backtests include the selected flat trading friction but still exclude tax, residual tracking error after inception, borrowing limits, and broker execution constraints.
+
+The free CAPE table is not a point-in-time revision archive. Historical publication and revision bias therefore remains an explicit model limitation; do not interpret threshold precision as causal evidence.
 
 Buying TQQQ shares with cash does not create daily broker margin calls. The fund's internal financing, derivatives, fees, daily compounding, and tracking effects are reflected in actual adjusted TQQQ prices after inception and approximated in synthetic pre-inception data. If the investor uses broker margin to buy TQQQ, margin interest is outside this model and must be added separately.
 
@@ -130,10 +155,11 @@ Buying TQQQ shares with cash does not create daily broker margin calls. The fund
 
 Treat the top panel as a monthly process control, not a prediction machine:
 
-1. Read the effective month action and confidence.
+1. Read the effective month action and qualitative rule strength.
 2. Compare month-open lock versus live preview. An upgrade means conditions worsened after the open.
 3. Check the vs-QQQ edge card for historical path cost, especially max drawdown and underperformance months.
 4. If you only hold QQQ or only hold TQQQ, use the matching tactical card, not the mixed book.
-5. Re-check once near month open, and again if the market is crashing mid-month.
+5. Enter holdings locally, select a risk policy, and review the next-session order draft before acting manually.
+6. Re-check once near month open, and again if the market is crashing mid-month.
 
 This is a research and process tool, not investment advice.
