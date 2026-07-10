@@ -1,7 +1,16 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
-const { backtest, calculateDecision, decisionConfidence, marketSnapshot, parseCapeTable, DEFAULT_THRESHOLDS } = require("../api/_lib");
+const {
+  backtest,
+  calculateDecision,
+  decisionConfidence,
+  marketSnapshot,
+  parseCapeTable,
+  DEFAULT_COST_BPS,
+  DEFAULT_THRESHOLDS,
+  RULESET_ID,
+} = require("../api/_lib");
 
 const visibleStrategyKeys = ["qqq", "signalQqq", "tqqq", "signalTqqq", "signal"];
 const allStrategyKeys = ["qqq", "tqqq", "blend8020", "signal", "signalQqq", "signalTqqq"];
@@ -12,6 +21,10 @@ function assertFinite(value, label) {
 }
 
 function assertBacktestResult(result, start) {
+  assert.equal(result.rulesetId, RULESET_ID);
+  assert.match(result.dataSnapshotId, /^snapshot-[a-f0-9]{16}$/);
+  assert.equal(result.costBps, DEFAULT_COST_BPS);
+  assert.equal(result.executionLag, "nextTradingSession");
   assert.deepEqual(result.strategies.map((strategy) => strategy.key), allStrategyKeys);
   assert(result.dataQuality.qqqActualStart);
   assert(result.dataQuality.tqqqActualStart);
@@ -28,7 +41,12 @@ function assertBacktestResult(result, start) {
   )));
   assert(result.headline);
   assert(result.headline.signalVsQqq);
+  assert(result.headline.scopeStart >= result.dataQuality.tqqqActualStart);
+  assert(result.headline.allocationMatched?.diagnostic);
   assertFinite(result.headline.signalVsQqq.finalRelativeMultiple, `${start} headline relative multiple`);
+  assertFinite(result.headline.signalVsQqq.maxRelativeDrawdown, `${start} headline relative drawdown`);
+  assertFinite(result.headline.signalVsQqq.longestRelativeUnderwaterMonths, `${start} headline underwater months`);
+  assertFinite(result.headline.allocationMatched.signalVsStatic.finalRelativeMultiple, `${start} allocation-matched relative multiple`);
 
   const strategies = Object.fromEntries(result.strategies.map((strategy) => [strategy.key, strategy]));
   for (const key of visibleStrategyKeys) {
@@ -42,6 +60,7 @@ function assertBacktestResult(result, start) {
       && Number.isFinite(point.nav)
       && point.nav > 0
       && Math.abs((point.cashWeight + point.qqqWeight + point.tqqqWeight) - 1) < 1e-8
+      && Number.isFinite(point.fees)
       && "qqqPrice" in point
     )), `${start} ${key} point validity`);
     assert(strategy.maxDrawdown <= 0 && strategy.maxDrawdown >= -1, `${start} ${key} drawdown`);
@@ -50,6 +69,7 @@ function assertBacktestResult(result, start) {
       assert(strategy.vsQqq, `${start} ${key} vsQqq`);
       assertFinite(strategy.vsQqq.finalRelativeMultiple, `${start} ${key} vsQqq multiple`);
     }
+    assert.equal(strategy.risk.sharpeType, "monthlyExcessReturnOverCash");
   }
 
   assert(strategies.signalQqq.points.every((point) => point.tqqqValue === 0), `${start} signalQqq tqqqValue`);
@@ -58,6 +78,9 @@ function assertBacktestResult(result, start) {
     const strategy = strategies[key];
     const actionCount = Object.values(strategy.actionCounts).reduce((sum, count) => sum + count, 0);
     assert(actionCount <= strategy.points.length, `${start} ${key} monthly action count`);
+    assert(strategy.points.filter((point) => point.actionKey).every((point) => (
+      point.actionDecisionDate && point.actionExecutionDate && point.actionExecutionDate > point.actionDecisionDate
+    )), `${start} ${key} next-session execution`);
   }
 
   assert(result.events.length >= (start === "2025-01" ? 1 : 2), `${start} events`);
@@ -87,12 +110,18 @@ function assertBacktestResult(result, start) {
   }
 
   assert(result.modelNotes.tqqqHoldingCosts.includes("does not create daily broker margin calls"));
+  assert(result.modelNotes.cadence.includes("next trading session"));
+  assert(result.modelNotes.sharpe.includes("excess returns"));
+  assert.equal(result.dataQuality.sourceMode, "versionedSnapshots");
+  assert.equal(result.dataQuality.capePointInTime, false);
   assert(result.modelNotes.notAdvice);
   assert(result.modelNotes.cadence);
   return strategies;
 }
 
 async function main() {
+  assert.equal(RULESET_ID, "2026-07-v3");
+  assert.equal(DEFAULT_COST_BPS, 5);
   assert.equal(DEFAULT_THRESHOLDS.cheapCape, 35);
   assert.equal(DEFAULT_THRESHOLDS.panicVix, 32);
 
@@ -117,6 +146,8 @@ async function main() {
     { capePercentile: 10, drawdownPct: -35, crash25dPct: -3, vix: 45 },
   );
   assert.equal(confidence.level, "high");
+  assert.equal(confidence.calibrated, false);
+  assert.equal("score" in confidence, false);
 
   const cape = parseCapeTable('<tr><td class="left">Jan 1, 2024</td><td class="right">33.3&nbsp;</td></tr>');
   assert.equal(cape.length, 1);
@@ -126,8 +157,16 @@ async function main() {
   const exportCsvBody = appJs.slice(appJs.indexOf("function exportCsv()"), appJs.indexOf("async function copyShareLink"));
   assert(appJs.includes('const visibleStrategyKeys = ["qqq", "signalQqq", "tqqq", "signalTqqq", "signal"];'));
   assert(appJs.includes("rampTqqq: ["));
+  assert(appJs.includes("ExecutionPlanner.planOrders"));
   assert(exportCsvBody.includes("visibleStrategies()"));
   assert(!exportCsvBody.includes("backtestData.strategies"));
+
+  const deterministic = await backtest({ start: "2010-01", cost: 5 });
+  assertBacktestResult(deterministic, "2010-01");
+  assert(deterministic.headline.syntheticExcluded);
+  const averageAllocation = deterministic.headline.allocationMatched.averageAllocation;
+  assert(averageAllocation.cashWeight >= 0 && averageAllocation.qqqWeight >= 0 && averageAllocation.tqqqWeight >= 0);
+  assert(Math.abs(averageAllocation.cashWeight + averageAllocation.qqqWeight + averageAllocation.tqqqWeight - 1) < 1e-6);
 
   if (process.env.LIVE === "1") {
     const market = await marketSnapshot();
@@ -137,6 +176,11 @@ async function main() {
     assert(market.dataQuality.tqqq.count > 1000);
     assert(market.decision.key);
     assert(market.decision.confidence);
+    assert.equal(market.decision.confidence.calibrated, false);
+    assert.equal(market.rulesetId, RULESET_ID);
+    assert.match(market.dataSnapshotId, /^snapshot-[a-f0-9]{16}$/);
+    assert(market.quotes.qqq.price > 0 && market.quotes.tqqq.price > 0);
+    assert.equal(market.riskPolicies.standard.maxTqqq, 0.4);
     assert(market.lockedDecision.key);
     assert(market.liveDecision.key);
     assert(Array.isArray(market.decisionHistory));

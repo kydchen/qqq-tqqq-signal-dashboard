@@ -145,6 +145,7 @@ h2 {
 
 .tile,
 .decision-panel,
+.execution-panel,
 .method-panel,
 .actions-panel,
 .backtest-panel,
@@ -434,6 +435,7 @@ h2 {
 }
 
 .history-panel,
+.execution-panel,
 .method-panel,
 .actions-panel,
 .guide-panel,
@@ -444,6 +446,233 @@ h2 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.execution-panel {
+  border-top: 4px solid var(--ink);
+}
+
+.local-only-badge {
+  align-self: flex-start;
+  border: 1px solid #86efac;
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 12px;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
+.execution-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, .82fr) minmax(0, 1.18fr);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.account-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px 18px 18px 0;
+}
+
+.account-form label:not(.checkline),
+.actual-note {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 740;
+}
+
+.account-form input,
+.account-form select,
+.actual-note textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 9px 10px;
+  min-height: 40px;
+  font-variant-numeric: tabular-nums;
+}
+
+.account-form .small-note,
+.account-form .execution-buttons,
+.account-form .form-error {
+  grid-column: 1 / -1;
+}
+
+.execution-checkline {
+  align-self: end;
+  min-height: 40px;
+}
+
+.execution-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.form-error {
+  color: var(--red);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.order-draft {
+  min-width: 0;
+  padding: 18px 0 18px 20px;
+  border-left: 1px solid var(--line);
+}
+
+.order-draft-head,
+.journal-head,
+.order-row,
+.order-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.order-draft h3,
+.journal-strip h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.order-status {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--muted);
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.order-status.ready {
+  border-color: #86efac;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.order-status.blocked {
+  border-color: #fca5a5;
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.order-summary {
+  margin: 14px 0;
+}
+
+.order-row {
+  min-height: 52px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+
+.order-side {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 26px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.order-side.buy { background: var(--green); }
+.order-side.sell { background: var(--red); }
+
+.order-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.order-main strong,
+.order-main span,
+.order-amount strong,
+.order-amount span {
+  display: block;
+}
+
+.order-main span,
+.order-amount span,
+.order-total-row span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.order-amount {
+  flex: 0 0 auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-total-row {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.secondary-actions {
+  margin-top: 8px;
+}
+
+.actual-note {
+  margin-top: 14px;
+}
+
+.actual-note textarea {
+  resize: vertical;
+  min-height: 68px;
+  font: inherit;
+}
+
+.journal-strip {
+  padding-top: 16px;
+}
+
+.journal-head .eyebrow {
+  margin-bottom: 4px;
+}
+
+.journal-entries {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.journal-entry {
+  min-width: 0;
+  border-left: 3px solid var(--blue);
+  padding: 4px 0 4px 10px;
+}
+
+.journal-entry strong,
+.journal-entry span,
+.journal-entry small {
+  display: block;
+}
+
+.journal-entry span,
+.journal-entry small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .collapsible-panel > summary {
@@ -1449,6 +1678,9 @@ canvas {
     margin-top: 16px;
   }
   .market-grid,
+  .execution-layout,
+  .account-form,
+  .journal-entries,
   .method-grid,
   .guide-grid,
   .action-grid,
@@ -1460,6 +1692,21 @@ canvas {
   .sensitivity,
   .backtest-controls {
     grid-template-columns: 1fr;
+  }
+  .account-form {
+    padding: 16px 0;
+  }
+  .order-draft {
+    padding: 16px 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+  .local-only-badge {
+    display: inline-flex;
+    margin-top: 10px;
+  }
+  .execution-buttons button {
+    min-height: 44px;
   }
   .weights-grid,
   .event-stats {

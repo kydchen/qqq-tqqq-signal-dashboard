@@ -94,6 +94,84 @@
       </article>
     </section>
 
+    <section class="execution-panel" aria-labelledby="executionTitle">
+      <div class="section-head split">
+        <div>
+          <p id="executionKicker" class="eyebrow">手动执行</p>
+          <h2 id="executionTitle">把本月动作换算成订单草稿</h2>
+          <p id="executionNote" class="muted"></p>
+        </div>
+        <span id="localOnlyBadge" class="local-only-badge">仅存此浏览器</span>
+      </div>
+      <div class="execution-layout">
+        <form id="accountForm" class="account-form">
+          <label>
+            <span id="riskProfileLabel">风险档</span>
+            <select id="riskProfileInput">
+              <option id="riskConservativeOption" value="conservative">保守</option>
+              <option id="riskStandardOption" value="standard" selected>标准</option>
+              <option id="riskAggressiveOption" value="aggressive">进攻</option>
+            </select>
+          </label>
+          <label>
+            <span id="cashInputLabel">现有现金（USD）</span>
+            <input id="cashInput" type="number" min="0" step="0.01" inputmode="decimal" value="0" />
+          </label>
+          <label>
+            <span id="qqqSharesLabel">QQQ 份额</span>
+            <input id="qqqSharesInput" type="number" min="0" step="0.001" inputmode="decimal" value="0" />
+          </label>
+          <label>
+            <span id="tqqqSharesLabel">TQQQ 份额</span>
+            <input id="tqqqSharesInput" type="number" min="0" step="0.001" inputmode="decimal" value="0" />
+          </label>
+          <label>
+            <span id="monthlyInputLabel">本月可投入（USD）</span>
+            <input id="monthlyContributionInput" type="number" min="0" step="0.01" inputmode="decimal" value="1000" />
+          </label>
+          <label class="checkline execution-checkline">
+            <input id="fractionalSharesInput" type="checkbox" checked />
+            <span id="fractionalSharesLabel">支持碎股</span>
+          </label>
+          <p id="riskProfileNote" class="small-note"></p>
+          <div class="execution-buttons">
+            <button id="planOrdersBtn" type="submit">生成订单草稿</button>
+            <button id="clearAccountBtn" class="ghost" type="button">清除本地数据</button>
+          </div>
+          <p id="accountError" class="form-error" hidden></p>
+        </form>
+        <div class="order-draft" aria-live="polite">
+          <div class="order-draft-head">
+            <div>
+              <p id="orderKicker" class="eyebrow">下一交易时段</p>
+              <h3 id="orderTitle">尚未生成订单</h3>
+            </div>
+            <span id="orderStatus" class="order-status">待输入</span>
+          </div>
+          <p id="orderMeta" class="small-note"></p>
+          <div id="orderSummary" class="order-summary"></div>
+          <div class="execution-buttons secondary-actions">
+            <button id="calendarBtn" class="ghost" type="button">导出月初日历</button>
+            <button id="recordPlanBtn" class="ghost" type="button" disabled>记录本月计划</button>
+          </div>
+          <label class="actual-note">
+            <span id="actualNoteLabel">实际执行备注</span>
+            <textarea id="actualNoteInput" rows="2" maxlength="500" placeholder="例如：按草稿买入；或说明未执行原因"></textarea>
+          </label>
+        </div>
+      </div>
+      <div class="journal-strip">
+        <div class="journal-head">
+          <div>
+            <p id="journalKicker" class="eyebrow">本地记录</p>
+            <h3 id="journalTitle">最近执行记录</h3>
+          </div>
+          <button id="clearJournalBtn" class="ghost" type="button">清空记录</button>
+        </div>
+        <div id="journalEntries" class="journal-entries"></div>
+      </div>
+    </section>
+
     <section class="history-panel">
       <div class="section-head">
         <p id="historyKicker" class="eyebrow">动作轨迹</p>
@@ -143,9 +221,9 @@
           <select id="startInput">
             <option value="1990-01">1990</option>
             <option value="1995-01">1995</option>
-            <option value="2000-01" selected>2000</option>
+            <option value="2000-01">2000</option>
             <option value="2005-01">2005</option>
-            <option value="2010-01">2010</option>
+            <option value="2010-02-11" selected>2010 (TQQQ)</option>
             <option value="2015-01">2015</option>
             <option value="2020-01">2020</option>
             <option value="2025-01">2025</option>
@@ -155,6 +233,14 @@
           <span id="monthlyFixedLabel">每月固定投入</span>
           <strong>$1,000</strong>
         </div>
+        <label>
+          <span id="costLabel">单边交易摩擦</span>
+          <select id="costInput">
+            <option value="0">0 bp</option>
+            <option value="5" selected>5 bp</option>
+            <option value="10">10 bp</option>
+          </select>
+        </label>
         <label class="checkline">
           <input id="trendInput" type="checkbox" checked />
           <span id="trendLabel">显示单位净值趋势线</span>
@@ -196,6 +282,7 @@
       <a id="repoLink" href="https://github.com/kydchen/qqq-tqqq-signal-dashboard" target="_blank" rel="noreferrer">GitHub repo</a>
     </footer>
   </main>
+  <script src="/assets/execution.js"></script>
   <script src="/assets/app.js"></script>
 </body>
 </html>
