@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 - 2026-07-10
+
+Ruleset `2026-07-v4` hardens the financial trust boundary after an external adversarial review.
+
+- Fixed staged TQQQ buys so QQQ rotation cannot bypass the monthly cash budget.
+- Delayed historical monthly CAPE observations by one month to remove same-month look-ahead.
+- Made fast-crash defense reachable when no core low signal is active.
+- Enforced the aggressive TQQQ cap at each strategy execution and aligned bottom-attack budgeting with the cockpit.
+- Preserved next-session actions across month boundaries instead of dropping month-end upgrades.
+- Added close-only Yahoo handling, freshness-based snapshot fallback, bounded retries, stricter source validation, and atomic snapshot writes.
+- Added independent order friction, 30-minute market/draft expiry, manual refresh, fetch timeouts, and local-journal hardening.
+- Moved all eight supported start-window audits into normal CI and added targeted planner regression tests.
+
 ## 0.3.0 - 2026-07-10
 
 Ruleset `2026-07-v3` turns the dashboard into a local-first manual decision cockpit.

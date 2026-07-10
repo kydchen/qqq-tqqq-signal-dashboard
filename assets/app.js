@@ -5,7 +5,7 @@ const colors = {
   tqqq: "#b42318",
   blend8020: "#0f766e",
   signal: "#6d28d9",
-  signalQqq: "#3b82f6",
+  signalQqq: "#0f766e",
   signalTqqq: "#f97316",
 };
 
@@ -16,13 +16,25 @@ const guideStrategyKeys = { qqqOnly: "signalQqq", tqqqOnly: "signalTqqq" };
 const actionVisuals = {
   bottomAttack: { icon: "T", color: "#b42318" },
   rampTqqq: { icon: "T+", color: "#dc2626" },
-  smallDipBuy: { icon: "Q", color: "#0f766e" },
+  smallDipBuy: { icon: "Q+", color: "#0f766e" },
   crashDefense: { icon: "1/2", color: "#7f1d1d" },
   trimHeat: { icon: "-T", color: "#b45309" },
   pauseAtHigh: { icon: "$", color: "#475467" },
   normalDca: { icon: "Q", color: "#1d4ed8" },
 };
 const workbenchViews = ["positions", "events", "attribution", "validation", "data"];
+const DEFAULT_RULE_THRESHOLDS = Object.freeze({
+  cheapCape: 35,
+  supportCape: 50,
+  supportDrawdown: -25,
+  highCape: 70,
+  bubbleCape: 85,
+  deepDrawdown: -20,
+  mildDrawdown: -12,
+  fastCrash: -12,
+  panicVix: 32,
+  quietVix: 12,
+});
 
 const copy = {
   zh: {
@@ -32,6 +44,8 @@ const copy = {
     decisionKicker: "本月有效动作",
     loadingAction: "加载中",
     loadingOperation: "正在拉取市场数据。",
+    refreshData: "刷新数据",
+    refreshingData: "刷新中...",
     confidenceLabel: "信号强度",
     confidenceLevels: { high: "高", medium: "中", low: "低" },
     lockedLabel: "月初锁定",
@@ -59,11 +73,12 @@ const copy = {
       qqqShares: "QQQ 份额",
       tqqqShares: "TQQQ 份额",
       monthly: "本月可投入（USD）",
+      cost: "订单单边摩擦",
       fractional: "支持碎股",
       profiles: {
         conservative: ["保守", "只使用 QQQ 和现金；已有 TQQQ 会在草稿中降到 0%。"],
-        standard: ["标准", "TQQQ 上限 40%，常态地板 10%，大底后最高 40%。"],
-        aggressive: ["进攻", "沿用主策略：TQQQ 上限 90%，常态地板 20%。"],
+        standard: ["标准", "TQQQ 月度检查上限 40%，常态地板 10%，大底后最高 40%。"],
+        aggressive: ["进攻", "沿用主策略：TQQQ 月度检查上限 90%，常态地板 20%。"],
       },
       plan: "生成订单草稿",
       clear: "清除本地数据",
@@ -90,6 +105,7 @@ const copy = {
       buy: "买入",
       sell: "卖出",
       savedError: "浏览器拒绝了本地存储；订单仍可计算，但无法保存。",
+      marketExpired: "行情快照已超过 30 分钟，请刷新数据后重新生成草稿。",
     },
     historyKicker: "动作轨迹",
     historyTitle: "近月有效动作",
@@ -118,7 +134,7 @@ const copy = {
     methodTitle: "三类信号，月初入金、月内可升级",
     actionCatalogKicker: "动作清单",
     actionCatalogTitle: "三信号策略会做什么",
-    actionCatalogNote: "优先级：大底 > 大底后加速 > 小底 > 快崩风控 > 过热锁利 > 高位暂停 > 正常定投。快崩只在没有折扣信号时卖出。单纯低波动不再触发暂停。",
+    actionCatalogNote: "优先级：大底 > 大底后加速 > 小底 > 快崩风控 > 过热锁利 > 高位暂停 > 正常定投。快崩只在没有核心低位信号时卖出。单纯低波动不再触发暂停。",
     guideKicker: "执行框架",
     guideTitle: "同一组三信号，两张单标的参考卡",
     guideNote: "战术 QQQ / 战术 TQQQ 是单标的参考，不改变顶部混合策略建议。回测里战术 QQQ 常略逊于纯 QQQ 定投，因为它用暂停和减仓换更低回撤。",
@@ -157,6 +173,7 @@ const copy = {
       latestAction: "最近动作",
       syntheticTqqq: "TQQQ 早期为合成数据",
       eventsTitle: "典型市场阶段表现",
+      eventsEmpty: "当前起始时间没有完整的事件复盘窗口。",
       period: "区间",
       signalReturn: "三信号",
       qqqReturn: "QQQ",
@@ -197,25 +214,27 @@ const copy = {
     errorTitle: "数据暂时不可用",
     loadingBacktest: "正在更新回测...",
     emptyChart: "没有可显示的数据。请换一个起始年份。",
+    emptySelection: "请至少选择一条策略线。",
+    historyEmpty: "当前窗口没有可显示的月度动作。",
     methods: [
       {
         title: "估值：CAPE 历史分位",
-        body: "CAPE 是标普宽基 Shiller PE，不是纳指精确估值。滚动 30 年分位低于 35% 记为便宜；若分位低于 50% 且纳指已深跌 25%+，也记为估值支持。高于 70% 高估，高于 85% 泡沫警戒。"
+        body: (thr) => `CAPE 是标普宽基 Shiller PE，不是纳指精确估值。滚动 30 年分位低于 ${thr.cheapCape}% 记为便宜；若分位低于 ${thr.supportCape}% 且纳指已深跌 ${Math.abs(thr.supportDrawdown)}%+，也记为估值支持。高于 ${thr.highCape}% 高估，高于 ${thr.bubbleCape}% 泡沫警戒。`
       },
       {
         title: "趋势：回撤与快崩",
-        body: "纳指 100 的 5 日均线相对约 5 年高点算回撤。深跌 ≤ -20%，浅跌 ≤ -12%。25 日跌超 12% 为快崩。只有在没有低位折扣信号时，快崩才触发卖出。"
+        body: (thr) => `纳指 100 的 5 日均线相对约 5 年高点算回撤。深跌 ≤ ${thr.deepDrawdown}%，浅跌 ≤ ${thr.mildDrawdown}%。25 日跌幅 ≤ ${thr.fastCrash}% 为快崩。只有在没有核心低位信号时，快崩才触发卖出。`
       },
       {
         title: "恐慌：VIX 5 日均值",
-        body: "VIX 是标普隐含波动，用作跨资产恐慌代理。5 日均值 ≥ 32 记为恐慌。低波动（≤ 12）只作提示，不再单独触发暂停或锁利。"
+        body: (thr) => `VIX 是标普隐含波动，用作跨资产恐慌代理。5 日均值 ≥ ${thr.panicVix} 记为恐慌。低波动（≤ ${thr.quietVix}）只作提示，不再单独触发暂停或锁利。`
       }
     ],
     decisions: {
       bottomAttack: ["大底进攻", "先用约 1/3 现金仓买 TQQQ；随后 6 个月继续把组合里的 TQQQ 提到约 90%。", "至少两个低位信号共振时触发。路径风险高，只适合能承受大幅回撤的仓位。"],
       rampTqqq: ["大底后加速", "继续用当月资金和部分现金买 TQQQ；不足 90% 时可把部分 QQQ 换成 TQQQ。", "这是大底后的 6 个月执行窗口，不是新的抄底信号。"],
       smallDipBuy: ["小底加仓", "最多用 2 倍月投入买 QQQ；多余现金继续等待更强信号。", "单个低位信号或浅跌区，加仓但不梭哈。"],
-      crashDefense: ["快崩风控", "卖出约一半 TQQQ；当月新增资金不买 QQQ/TQQQ，留现金。", "只在没有折扣信号时启用。已出现深跌/恐慌时，优先买点而不是强行砍仓。"],
+      crashDefense: ["快崩风控", "卖出约一半 TQQQ；当月新增资金不买 QQQ/TQQQ，留现金。", "只在没有核心低位信号时启用。已出现深跌/恐慌时，优先买点而不是强行砍仓。"],
       pauseAtHigh: ["高位暂停", "本月暂停新增 QQQ/TQQQ 买入，新增资金进入现金仓。", "高估且贴近新高，或进入泡沫警戒时，耐心优于追涨。"],
       trimHeat: ["过热锁利", "卖出约 1/12 TQQQ，但保留 20% TQQQ 底仓；当月新增资金不买 QQQ/TQQQ，留现金。", "泡沫级估值持续 6 个月以上才锁利，不是普通牛市的例行减仓。"],
       normalDca: ["正常定投", "如果 TQQQ 低于组合 20%，先用当月资金和现金补买 TQQQ；补足后剩余资金买 QQQ。现金仓每月最多拿 1/6 补买 QQQ。", "没有低位信号时，只保留小杠杆底仓，不主动追高。"],
@@ -223,10 +242,10 @@ const copy = {
     actions: {
       bottomAttack: { title: "大底进攻", condition: "2-3 个低位信号同时亮（可月内升级）", operation: "先用约 1/3 现金仓买 TQQQ，剩余现金留给后续 6 个月" },
       rampTqqq: { title: "大底后加速", condition: "大底进攻后的 6 个月", operation: "用当月 $1,000 和约 1/6 现金继续买 TQQQ；还不够 90% 时，卖出一部分 QQQ 换成 TQQQ" },
-      smallDipBuy: { title: "小底加仓", condition: "1 个低位信号，或浅跌 ≤ -12%", operation: "最多 2x 月投入买 QQQ" },
-      crashDefense: { title: "快崩风控", condition: "25 日跌幅 ≤ -12%，且没有低位/浅跌折扣", operation: "卖出约 1/2 TQQQ；当月不买 QQQ/TQQQ，留现金" },
+      smallDipBuy: { title: "小底加仓", condition: (thr) => `1 个核心低位信号，或浅跌 ≤ ${thr.mildDrawdown}%`, operation: "最多 2x 月投入买 QQQ" },
+      crashDefense: { title: "快崩风控", condition: (thr) => `25 日跌幅 ≤ ${thr.fastCrash}%，且没有核心低位信号`, operation: "卖出约 1/2 TQQQ；当月不买 QQQ/TQQQ，留现金" },
       trimHeat: { title: "过热锁利", condition: "CAPE 泡沫警戒持续 6 个月以上", operation: "卖出约 1/12 TQQQ；当月不买 QQQ/TQQQ，留现金" },
-      pauseAtHigh: { title: "高位暂停", condition: "CAPE ≥ 70% 且距高点 < 5%，或泡沫警戒", operation: "不买 QQQ/TQQQ，当月资金留现金" },
+      pauseAtHigh: { title: "高位暂停", condition: (thr) => `CAPE ≥ ${thr.highCape}% 且距高点 < 5%，或达到 ${thr.bubbleCape}% 泡沫警戒`, operation: "不买 QQQ/TQQQ，当月资金留现金" },
       normalDca: { title: "正常定投", condition: "没有触发以上任何动作", operation: "TQQQ 不到 20% 就先买 TQQQ；够了以后买 QQQ，现金仓每月拿 1/6 买回 QQQ" },
     },
     guides: {
@@ -304,7 +323,7 @@ const copy = {
       bottomAttack: "大底次数",
       shortSample: "样本太短",
     },
-    meta: (data) => `生成时间 ${fmtDateTime(data.generatedAt)}；规则 ${data.rulesetId || "--"}；数据 ${data.dataSnapshotId || "--"}；纳指最新 ${fmtDate(data.indicators.nasdaq100.date)}；低位信号 ${data.decision.lowSignalCount}/3。${data.staleSources?.length ? ` 使用旧数据：${data.staleSources.join("、")}。` : ""}`,
+    meta: (data) => `生成时间 ${fmtDateTime(data.generatedAt)}；规则 ${data.rulesetId || "--"}；数据 ${data.dataSnapshotId || "--"}；纳指最新 ${fmtDate(data.indicators.nasdaq100.date)}；低位信号 ${data.decision.lowSignalCount}/3。${data.staleSources?.length ? ` 过期：${localizedSources(data.staleSources).join("、")}。` : ""}${data.fallbackSources?.length ? ` 新鲜快照兜底：${localizedSources(data.fallbackSources).join("、")}。` : ""}`,
     capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}；滚动样本 ${cape.rollingMonths || 360} 个月；便宜上次 ${cape.lastCheap?.label || "无"}。`,
     ddNote: (ndx) => `5 日均值 ${fmtNumber(ndx.level5dAvg, 0)}；25 日变化 ${fmtPct(ndx.crash25dPct)}。`,
     vixNote: (vix) => `最新 ${vix.latest.toFixed(2)}；日期 ${vix.date}。`,
@@ -316,6 +335,8 @@ const copy = {
     decisionKicker: "Effective month action",
     loadingAction: "Loading",
     loadingOperation: "Fetching market data.",
+    refreshData: "Refresh data",
+    refreshingData: "Refreshing...",
     confidenceLabel: "Rule strength",
     confidenceLevels: { high: "High", medium: "Med", low: "Low" },
     lockedLabel: "Month-open lock",
@@ -343,11 +364,12 @@ const copy = {
       qqqShares: "QQQ shares",
       tqqqShares: "TQQQ shares",
       monthly: "Available this month (USD)",
+      cost: "Order friction, one way",
       fractional: "Fractional shares supported",
       profiles: {
         conservative: ["Conservative", "QQQ and cash only; the draft reduces any existing TQQQ to 0%."],
-        standard: ["Standard", "TQQQ cap 40%, normal floor 10%, post-bottom cap 40%."],
-        aggressive: ["Aggressive", "Current main policy: TQQQ cap 90% and normal floor 20%."],
+        standard: ["Standard", "TQQQ monthly-review cap 40%, normal floor 10%, post-bottom cap 40%."],
+        aggressive: ["Aggressive", "Current main policy: TQQQ monthly-review cap 90% and normal floor 20%."],
       },
       plan: "Build order draft",
       clear: "Clear local data",
@@ -374,6 +396,7 @@ const copy = {
       buy: "Buy",
       sell: "Sell",
       savedError: "This browser blocked local storage. Orders still calculate but cannot be saved.",
+      marketExpired: "The market snapshot is more than 30 minutes old. Refresh data before rebuilding the draft.",
     },
     historyKicker: "Action path",
     historyTitle: "Recent effective actions",
@@ -402,7 +425,7 @@ const copy = {
     methodTitle: "Three signals, month-open funding, intra-month upgrades",
     actionCatalogKicker: "Action list",
     actionCatalogTitle: "What the signal strategy can do",
-    actionCatalogNote: "Priority: bottom attack > post-bottom ramp > small dip > fast-crash defense > heat trim > pause at high > normal DCA. Fast-crash sells only when no discount signal is on. Quiet VIX alone no longer forces a pause.",
+    actionCatalogNote: "Priority: bottom attack > post-bottom ramp > small dip > fast-crash defense > heat trim > pause at high > normal DCA. Fast-crash sells only when no core low signal is on. Quiet VIX alone no longer forces a pause.",
     guideKicker: "Execution modes",
     guideTitle: "One signal set, two single-ETF references",
     guideNote: "Tactical QQQ / Tactical TQQQ are references only. In backtests, Tactical QQQ often slightly trails plain QQQ DCA because pauses and trims buy lower path risk with less bull-market capture.",
@@ -441,6 +464,7 @@ const copy = {
       latestAction: "Latest action",
       syntheticTqqq: "Early TQQQ range is synthetic",
       eventsTitle: "Key market regimes",
+      eventsEmpty: "No complete event window is available for this start date.",
       period: "Period",
       signalReturn: "Three-signal",
       qqqReturn: "QQQ",
@@ -481,25 +505,27 @@ const copy = {
     errorTitle: "Data unavailable",
     loadingBacktest: "Updating backtest...",
     emptyChart: "No chart data is available. Pick another start year.",
+    emptySelection: "Select at least one strategy line.",
+    historyEmpty: "No monthly actions are available for this window.",
     methods: [
       {
         title: "Valuation: CAPE percentile",
-        body: "CAPE is S&P Shiller PE, not a precise Nasdaq valuation. Below the 35th rolling 30-year percentile counts as cheap. Below the 50th percentile with a Nasdaq-100 drawdown of 25%+ also counts as valuation support. Above 70% is expensive; above 85% is bubble watch."
+        body: (thr) => `CAPE is S&P Shiller PE, not a precise Nasdaq valuation. Below the ${thr.cheapCape}th rolling 30-year percentile counts as cheap. Below the ${thr.supportCape}th percentile with a Nasdaq-100 drawdown of ${Math.abs(thr.supportDrawdown)}%+ also counts as valuation support. Above ${thr.highCape}% is expensive; above ${thr.bubbleCape}% is bubble watch.`
       },
       {
         title: "Trend: drawdown and fast crash",
-        body: "Nasdaq-100 5-day averages versus a rolling 5-year high define drawdown. Deep is <= -20%, mild is <= -12%. A 12% 25-day drop is a fast crash. Fast-crash selling only fires when no discount signal is active."
+        body: (thr) => `Nasdaq-100 5-day averages versus a rolling 5-year high define drawdown. Deep is <= ${thr.deepDrawdown}%, mild is <= ${thr.mildDrawdown}%. A 25-day drop <= ${thr.fastCrash}% is a fast crash. Fast-crash selling only fires when no core low signal is active.`
       },
       {
         title: "Fear: VIX 5-day average",
-        body: "VIX is S&P implied vol, used as a cross-asset panic proxy. A 5-day average at or above 32 counts as panic. Quiet vol (<= 12) is informational only and no longer forces pause or trim by itself."
+        body: (thr) => `VIX is S&P implied vol, used as a cross-asset panic proxy. A 5-day average at or above ${thr.panicVix} counts as panic. Quiet vol (<= ${thr.quietVix}) is informational only and no longer forces pause or trim by itself.`
       }
     ],
     decisions: {
       bottomAttack: ["Bottom attack", "Deploy about 1/3 of cash into TQQQ, then spend 6 months lifting TQQQ toward about 90% of the portfolio.", "Needs at least two low signals. Path risk is high; size only what you can hold through a severe drawdown."],
       rampTqqq: ["Post-bottom ramp", "Keep buying TQQQ with monthly cash and part of saved cash. If still below 90%, rotate some QQQ into TQQQ.", "This is the 6-month execution window after a bottom attack, not a fresh bottom call."],
       smallDipBuy: ["Small dip buy", "Buy QQQ with up to 2x the monthly contribution; keep excess cash for stronger signals.", "One low signal or a mild drawdown. Add, do not all-in."],
-      crashDefense: ["Fast-crash defense", "Sell about half of TQQQ into cash. New monthly cash does not buy QQQ/TQQQ.", "Only when no discount signal is on. If deep drop or panic is already present, buy rules take priority over forced liquidation."],
+      crashDefense: ["Fast-crash defense", "Sell about half of TQQQ into cash. New monthly cash does not buy QQQ/TQQQ.", "Only when no core low signal is on. If deep drop or panic is already present, buy rules take priority over forced liquidation."],
       pauseAtHigh: ["Pause at high", "Pause new QQQ/TQQQ buying this month. Route new money to cash.", "Expensive near the high, or bubble watch. Patience beats chase."],
       trimHeat: ["Trim heat", "Sell about 1/12 of TQQQ, keep a 20% TQQQ floor, and keep new monthly cash in cash.", "Only after bubble-level CAPE has lasted 6+ months. Not a routine bull-market sell."],
       normalDca: ["Normal DCA", "If TQQQ is below 20% of the portfolio, use monthly money and cash to buy TQQQ first. After that, buy QQQ. Each month, use up to 1/6 of extra cash to buy QQQ.", "Without low signals, keep only a small leverage floor instead of chasing."],
@@ -507,10 +533,10 @@ const copy = {
     actions: {
       bottomAttack: { title: "Bottom attack", condition: "2-3 low signals on (can upgrade mid-month)", operation: "Deploy about 1/3 of cash into TQQQ; keep the rest for the next 6 months" },
       rampTqqq: { title: "Post-bottom ramp", condition: "6 months after a bottom attack", operation: "Use the monthly $1,000 and about 1/6 of cash to buy TQQQ; if still below 90%, sell part of QQQ and buy TQQQ" },
-      smallDipBuy: { title: "Small dip buy", condition: "1 low signal, or mild drawdown <= -12%", operation: "Buy QQQ with up to 2x monthly contribution" },
-      crashDefense: { title: "Fast-crash defense", condition: "25-day drop <= -12% with no discount signal", operation: "Sell about 1/2 of TQQQ; do not buy QQQ/TQQQ this month" },
+      smallDipBuy: { title: "Small dip buy", condition: (thr) => `1 core low signal, or mild drawdown <= ${thr.mildDrawdown}%`, operation: "Buy QQQ with up to 2x monthly contribution" },
+      crashDefense: { title: "Fast-crash defense", condition: (thr) => `25-day drop <= ${thr.fastCrash}% with no core low signal`, operation: "Sell about 1/2 of TQQQ; do not buy QQQ/TQQQ this month" },
       trimHeat: { title: "Trim heat", condition: "Bubble-watch CAPE lasts 6+ months", operation: "Sell about 1/12 of TQQQ; do not buy QQQ/TQQQ this month" },
-      pauseAtHigh: { title: "Pause at high", condition: "CAPE >= 70% and within 5% of high, or bubble watch", operation: "Do not buy QQQ/TQQQ; hold monthly cash" },
+      pauseAtHigh: { title: "Pause at high", condition: (thr) => `CAPE >= ${thr.highCape}% and within 5% of high, or ${thr.bubbleCape}% bubble watch`, operation: "Do not buy QQQ/TQQQ; hold monthly cash" },
       normalDca: { title: "Normal DCA", condition: "No higher-priority rule fires", operation: "Buy TQQQ until it reaches 20%; then buy QQQ, using 1/6 of spare cash monthly" },
     },
     guides: {
@@ -588,7 +614,7 @@ const copy = {
       bottomAttack: "Bottom attacks",
       shortSample: "Too short",
     },
-    meta: (data) => `Generated ${fmtDateTime(data.generatedAt)}; rules ${data.rulesetId || "--"}; data ${data.dataSnapshotId || "--"}; Nasdaq ${fmtDate(data.indicators.nasdaq100.date)}; low signals ${data.decision.lowSignalCount}/3.${data.staleSources?.length ? ` Stale: ${data.staleSources.join(", ")}.` : ""}`,
+    meta: (data) => `Generated ${fmtDateTime(data.generatedAt)}; rules ${data.rulesetId || "--"}; data ${data.dataSnapshotId || "--"}; Nasdaq ${fmtDate(data.indicators.nasdaq100.date)}; low signals ${data.decision.lowSignalCount}/3.${data.staleSources?.length ? ` Stale: ${localizedSources(data.staleSources).join(", ")}.` : ""}${data.fallbackSources?.length ? ` Fresh snapshot fallback: ${localizedSources(data.fallbackSources).join(", ")}.` : ""}`,
     capeNote: (cape) => `CAPE ${cape.value.toFixed(2)}; rolling sample ${cape.rollingMonths || 360} months; last cheap ${cape.lastCheap?.label || "none"}.`,
     ddNote: (ndx) => `5-day average ${fmtNumber(ndx.level5dAvg, 0)}; 25-day change ${fmtPct(ndx.crash25dPct)}.`,
     vixNote: (vix) => `Latest ${vix.latest.toFixed(2)}; date ${vix.date}.`,
@@ -666,6 +692,11 @@ function fmtDateTime(date) {
   return new Date(date).toLocaleString(lang === "zh" ? "zh-CN" : "en-US", { dateStyle: "medium", timeStyle: "short" });
 }
 
+function localizedSources(sources = []) {
+  const zhLabels = { "Nasdaq-100": "纳指 100", QQQ: "QQQ", TQQQ: "TQQQ", VIX: "VIX", Rates: "利率", CAPE: "CAPE" };
+  return sources.map((source) => (lang === "zh" ? zhLabels[source] || source : source));
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
@@ -701,6 +732,7 @@ function accountFromForm() {
     qqqShares: $("qqqSharesInput").value,
     tqqqShares: $("tqqqSharesInput").value,
     monthlyContribution: $("monthlyContributionInput").value,
+    costBps: $("executionCostInput").value,
     fractionalShares: $("fractionalSharesInput").checked,
   };
 }
@@ -712,7 +744,18 @@ function restoreAccountForm() {
   for (const [id, key] of [["cashInput", "cash"], ["qqqSharesInput", "qqqShares"], ["tqqqSharesInput", "tqqqShares"], ["monthlyContributionInput", "monthlyContribution"]]) {
     if (Number.isFinite(Number(account[key])) && Number(account[key]) >= 0) $(id).value = String(account[key]);
   }
+  if (["0", "5", "10"].includes(String(account.costBps))) $("executionCostInput").value = String(account.costBps);
   $("fractionalSharesInput").checked = account.fractionalShares !== false;
+}
+
+function marketSnapshotIsFresh() {
+  const generatedAt = Date.parse(marketData?.generatedAt || "");
+  return Number.isFinite(generatedAt) && Date.now() - generatedAt <= 30 * 60 * 1000;
+}
+
+function orderPlanIsFresh() {
+  const generatedAt = Date.parse(currentOrderPlan?.generatedAt || "");
+  return Number.isFinite(generatedAt) && Date.now() - generatedAt <= 30 * 60 * 1000;
 }
 
 function renderRiskProfileNote() {
@@ -725,12 +768,34 @@ function showAccountError(message = "") {
   $("accountError").textContent = message;
 }
 
+function localizedPlannerError(error) {
+  if (lang !== "zh") return error.message;
+  const labels = {
+    Cash: "现金",
+    "QQQ shares": "QQQ 份额",
+    "TQQQ shares": "TQQQ 份额",
+    "Monthly contribution": "本月投入",
+    "Trading cost": "交易摩擦",
+    "QQQ price": "QQQ 报价",
+    "TQQQ price": "TQQQ 报价",
+  };
+  for (const [english, chinese] of Object.entries(labels)) {
+    if (error.message.startsWith(`${english} must be between`)) return `${chinese}超出允许范围。`;
+  }
+  if (error.message.includes("risk policy")) return "风险档参数不可用，请刷新数据。";
+  if (error.message.includes("quotes are unavailable")) return "ETF 收盘报价不可用，请刷新数据。";
+  if (error.message.includes("TQQQ targets")) return "TQQQ 目标不能超过风险档上限。";
+  if (error.message.includes("Trading cost must")) return "交易摩擦只能选择 0、5 或 10 bp。";
+  return "订单输入无效，请检查持仓、风险档和报价。";
+}
+
 function renderOrderDraft() {
   const t = copy[lang].execution;
   const status = $("orderStatus");
   status.className = "order-status";
+  if (currentOrderPlan && !orderPlanIsFresh()) currentOrderPlan = null;
   if (!currentOrderPlan) {
-    const blocked = marketData && (marketData.decision?.available === false || marketData.executionReady === false);
+    const blocked = marketData && (marketData.decision?.available === false || marketData.executionReady === false || !marketSnapshotIsFresh());
     $("orderTitle").textContent = blocked ? t.blocked : t.emptyTitle;
     status.textContent = blocked ? t.blocked : t.waiting;
     if (blocked) status.classList.add("blocked");
@@ -768,6 +833,7 @@ function planCurrentOrders(event) {
   showAccountError();
   try {
     if (!marketData?.decision?.available || !marketData.executionReady) throw new Error(copy[lang].execution.blocked);
+    if (!marketSnapshotIsFresh()) throw new Error(copy[lang].execution.marketExpired);
     const account = accountFromForm();
     const policy = marketData.riskPolicies?.[account.profile];
     const plan = ExecutionPlanner.planOrders({
@@ -775,7 +841,7 @@ function planCurrentOrders(event) {
       policy,
       decision: marketData.decision,
       quotes: marketData.quotes,
-      costBps: Number($("costInput").value),
+      costBps: Number(account.costBps),
     });
     currentOrderPlan = {
       ...plan,
@@ -789,7 +855,7 @@ function planCurrentOrders(event) {
     renderOrderDraft();
   } catch (error) {
     currentOrderPlan = null;
-    showAccountError(error.message);
+    showAccountError(localizedPlannerError(error));
     renderOrderDraft();
   }
 }
@@ -813,11 +879,16 @@ function exportMonthlyCalendar() {
 
 function readJournal() {
   const entries = readLocalJson(JOURNAL_STORAGE_KEY, []);
-  return Array.isArray(entries) ? entries : [];
+  return Array.isArray(entries) ? entries.filter((entry) => entry && typeof entry === "object") : [];
 }
 
 function recordCurrentPlan() {
-  if (!currentOrderPlan) return;
+  if (!currentOrderPlan || !orderPlanIsFresh() || !marketSnapshotIsFresh()) {
+    currentOrderPlan = null;
+    showAccountError(copy[lang].execution.marketExpired);
+    renderOrderDraft();
+    return;
+  }
   const entry = {
     id: `${Date.now()}`,
     recordedAt: new Date().toISOString(),
@@ -848,7 +919,10 @@ function renderJournal() {
     return;
   }
   $("journalEntries").innerHTML = entries.map((entry) => {
-    const orders = (entry.orders || []).map((order) => `${order.side === "BUY" ? t.buy : t.sell} ${fmtNumber(order.shares, order.shares % 1 ? 3 : 0)} ${order.symbol}`).join(" · ") || t.noTrade;
+    const safeOrders = Array.isArray(entry.orders) ? entry.orders.filter((order) => (
+      order && ["BUY", "SELL"].includes(order.side) && ["QQQ", "TQQQ"].includes(order.symbol) && Number.isFinite(Number(order.shares))
+    )) : [];
+    const orders = safeOrders.map((order) => `${order.side === "BUY" ? t.buy : t.sell} ${fmtNumber(Number(order.shares), Number(order.shares) % 1 ? 3 : 0)} ${order.symbol}`).join(" · ") || t.noTrade;
     const profile = t.profiles[entry.profile]?.[0] || entry.profile;
     return `<article class="journal-entry">
       <strong>${escapeHtml(fmtDateTime(entry.recordedAt))} · ${escapeHtml(actionTitle(entry.decisionKey))}</strong>
@@ -867,6 +941,7 @@ function clearAccountData() {
   $("qqqSharesInput").value = "0";
   $("tqqqSharesInput").value = "0";
   $("monthlyContributionInput").value = "1000";
+  $("executionCostInput").value = "5";
   $("fractionalSharesInput").checked = true;
   $("actualNoteInput").value = "";
   currentOrderPlan = null;
@@ -951,7 +1026,7 @@ function updateShareUrl() {
   params.set("cost", $("costInput").value);
   params.set("lang", lang);
   params.set("strategies", [...selected].filter((key) => visibleStrategySet.has(key)).join(","));
-  if ($("trendInput").checked) params.set("trend", "1");
+  params.set("trend", $("trendInput").checked ? "1" : "0");
   if ($("scaleInput").checked) params.set("log", "1");
   if ($("qqqAxisInput").checked) params.set("qqqAxis", "1");
   if (showActionMarkers) params.set("actions", "1");
@@ -1008,12 +1083,17 @@ function renderSparkline(id, points, formatValue) {
   `;
 }
 
+function currentRuleThresholds() {
+  return { ...DEFAULT_RULE_THRESHOLDS, ...(marketData?.decision?.thresholds || {}) };
+}
+
 function renderStatic() {
   const t = copy[lang];
   document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
   $("eyebrow").textContent = t.eyebrow;
   $("title").textContent = t.title;
   $("subtitle").textContent = t.subtitle;
+  $("refreshDataBtn").textContent = t.refreshData;
   $("decisionKicker").textContent = t.decisionKicker;
   $("confidenceLabel").textContent = t.confidenceLabel;
   $("lockedLabel").textContent = t.lockedLabel;
@@ -1031,6 +1111,7 @@ function renderStatic() {
   $("qqqSharesLabel").textContent = execution.qqqShares;
   $("tqqqSharesLabel").textContent = execution.tqqqShares;
   $("monthlyInputLabel").textContent = execution.monthly;
+  $("executionCostLabel").textContent = execution.cost;
   $("fractionalSharesLabel").textContent = execution.fractional;
   $("riskConservativeOption").textContent = execution.profiles.conservative[0];
   $("riskStandardOption").textContent = execution.profiles.standard[0];
@@ -1075,12 +1156,16 @@ function renderStatic() {
   $("backtestNote").textContent = t.backtestNote;
   $("zhBtn").classList.toggle("active", lang === "zh");
   $("enBtn").classList.toggle("active", lang === "en");
+  $("zhBtn").setAttribute("aria-pressed", String(lang === "zh"));
+  $("enBtn").setAttribute("aria-pressed", String(lang === "en"));
   renderError();
 
+  const thresholds = currentRuleThresholds();
   $("methods").replaceChildren(...t.methods.map((item) => {
     const card = document.createElement("article");
     card.className = "method-card";
-    card.innerHTML = `<h3>${item.title}</h3><p>${item.body}</p>`;
+    const body = typeof item.body === "function" ? item.body(thresholds) : item.body;
+    card.innerHTML = `<h3>${item.title}</h3><p>${body}</p>`;
     return card;
   }));
 
@@ -1100,6 +1185,7 @@ function renderStatic() {
 
 function renderActionCatalog() {
   const t = copy[lang];
+  const thresholds = currentRuleThresholds();
   $("actionCatalog").replaceChildren(...actionOrder.map((key) => {
     const action = t.actions[key];
     const visual = actionVisuals[key];
@@ -1109,7 +1195,7 @@ function renderActionCatalog() {
       <span class="action-icon" style="background:${visual.color}">${visual.icon}</span>
       <div>
         <h3>${action.title}</h3>
-        <p class="condition">${action.condition}</p>
+        <p class="condition">${typeof action.condition === "function" ? action.condition(thresholds) : action.condition}</p>
         <p>${action.operation}</p>
       </div>
     `;
@@ -1192,7 +1278,7 @@ function renderDecisionHistory() {
   const t = copy[lang];
   const rows = marketData?.decisionHistory || [];
   if (!rows.length) {
-    el.replaceChildren();
+    el.innerHTML = `<p class="small-note">${t.historyEmpty}</p>`;
     return;
   }
   el.replaceChildren(...rows.map((row) => {
@@ -1215,18 +1301,18 @@ function renderMarket() {
   if (!marketData) return;
   const t = copy[lang];
   const { cape, nasdaq100, vix } = marketData.indicators;
-  const thr = marketData.decision?.thresholds || {};
-  const cheapCape = thr.cheapCape ?? 35;
-  const deepDd = thr.deepDrawdown ?? -20;
-  const mildDd = thr.mildDrawdown ?? -12;
-  const panicVix = thr.panicVix ?? 32;
-  const fastCrash = thr.fastCrash ?? -12;
+  const thr = currentRuleThresholds();
+  const cheapCape = thr.cheapCape;
+  const deepDd = thr.deepDrawdown;
+  const mildDd = thr.mildDrawdown;
+  const panicVix = thr.panicVix;
+  const fastCrash = thr.fastCrash;
 
   $("capeValue").textContent = fmtPct(cape.percentile);
   $("capeNote").textContent = t.capeNote(cape);
   const capeState = cape.percentile < cheapCape
     ? ["blue", t.statusLabels.cheap]
-    : cape.percentile >= 70
+    : cape.percentile >= thr.highCape
       ? ["red", t.statusLabels.expensive]
       : ["amber", t.statusLabels.neutral];
   setStatus("capeDot", "capeStatus", capeState[0], capeState[1]);
@@ -1248,7 +1334,7 @@ function renderMarket() {
   $("vixNote").textContent = t.vixNote(vix);
   const vixState = vix.value5dAvg >= panicVix
     ? ["blue", t.statusLabels.panic]
-    : vix.value5dAvg <= 12
+    : vix.value5dAvg <= thr.quietVix
       ? ["red", t.statusLabels.lowVol]
       : ["amber", t.statusLabels.normal];
   setStatus("vixDot", "vixStatus", vixState[0], vixState[1]);
@@ -1260,8 +1346,8 @@ function renderMarket() {
   if (decision.available === false) {
     $("action").textContent = t.execution.blocked;
     $("operation").textContent = lang === "zh"
-      ? `关键数据正在使用旧快照：${decision.blockedSources.join("、")}。本月动作仅供历史参考。`
-      : `Critical inputs are using stale snapshots: ${decision.blockedSources.join(", ")}. The action is historical context only.`;
+      ? `关键数据已过期：${localizedSources(decision.blockedSources).join("、")}。本月动作仅供历史参考。`
+      : `Critical inputs are stale: ${localizedSources(decision.blockedSources).join(", ")}. The action is historical context only.`;
     $("risk").textContent = lang === "zh" ? "数据恢复前不生成订单草稿。" : "No order draft is produced until the data recovers.";
   } else {
     $("action").textContent = text[0];
@@ -1366,7 +1452,7 @@ function renderWorkbench() {
   }
   const t = copy[lang];
   const active = workbenchViews.includes(workbenchView) ? workbenchView : "positions";
-  const tabs = workbenchViews.map((key) => `<button type="button" class="workbench-tab${active === key ? " active" : ""}" data-view="${key}">${t.tabs[key]}</button>`).join("");
+  const tabs = workbenchViews.map((key) => `<button id="workbench-tab-${key}" type="button" role="tab" aria-controls="workbench-panel" aria-selected="${active === key}" tabindex="${active === key ? 0 : -1}" class="workbench-tab${active === key ? " active" : ""}" data-view="${key}">${t.tabs[key]}</button>`).join("");
   const panels = {
     positions: renderPositionsView(),
     events: renderEventsView(),
@@ -1378,20 +1464,31 @@ function renderWorkbench() {
     <div class="workbench-head">
       <div>
         <p class="eyebrow">${t.workbenchTitle}</p>
-        <div class="workbench-tabs">${tabs}</div>
+        <div class="workbench-tabs" role="tablist" aria-label="${t.workbenchTitle}">${tabs}</div>
       </div>
       <div class="workbench-actions">
         <button id="copyLinkBtn" type="button" class="ghost">${t.copyLink}</button>
         <button id="exportCsvBtn" type="button">${t.exportCsv}</button>
       </div>
     </div>
-    <div class="workbench-body">${panels[active]}</div>
+    <div id="workbench-panel" class="workbench-body" role="tabpanel" aria-labelledby="workbench-tab-${active}">${panels[active]}</div>
   `;
+  const activate = (view, focus = false) => {
+    workbenchView = view;
+    updateShareUrl();
+    renderWorkbench();
+    if (focus) $("workbench").querySelector(`[data-view="${view}"]`)?.focus();
+  };
   el.querySelectorAll(".workbench-tab").forEach((button) => {
-    button.addEventListener("click", () => {
-      workbenchView = button.dataset.view;
-      updateShareUrl();
-      renderWorkbench();
+    button.addEventListener("click", () => activate(button.dataset.view, true));
+    button.addEventListener("keydown", (event) => {
+      const index = workbenchViews.indexOf(button.dataset.view);
+      const next = event.key === "ArrowRight" ? (index + 1) % workbenchViews.length
+        : event.key === "ArrowLeft" ? (index - 1 + workbenchViews.length) % workbenchViews.length
+          : event.key === "Home" ? 0 : event.key === "End" ? workbenchViews.length - 1 : -1;
+      if (next < 0) return;
+      event.preventDefault();
+      activate(workbenchViews[next], true);
     });
   });
   $("exportCsvBtn").addEventListener("click", exportCsv);
@@ -1508,7 +1605,7 @@ function drawWeightChart() {
 function renderEventsView() {
   const t = copy[lang];
   const events = backtestData.events || [];
-  if (!events.length) return `<p class="muted">${t.workbench.noValidation}</p>`;
+  if (!events.length) return `<p class="muted">${t.workbench.eventsEmpty}</p>`;
   return `
     <h3>${t.workbench.eventsTitle}</h3>
     <div class="event-grid">
@@ -1631,6 +1728,10 @@ function csvCell(value) {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
+function csvNumber(value, digits) {
+  return Number.isFinite(Number(value)) ? Number(Number(value).toFixed(digits)) : "";
+}
+
 function exportCsv() {
   if (!backtestData) return;
   const headers = ["ruleset_id", "data_snapshot_id", "cost_bps", "execution_lag", "date", "strategy", "value", "nav", "cash", "qqq_value", "tqqq_value", "cash_weight", "qqq_weight", "tqqq_weight", "fees", "action_key", "action_decision_date", "action_execution_date", "qqq_price", "tqqq_source"];
@@ -1644,19 +1745,19 @@ function exportCsv() {
         backtestData.executionLag,
         point.date,
         strategy.key,
-        Math.round(point.value * 100) / 100,
-        point.nav,
-        point.cash,
-        point.qqqValue,
-        point.tqqqValue,
-        point.cashWeight,
-        point.qqqWeight,
-        point.tqqqWeight,
-        point.fees,
+        csvNumber(point.value, 2),
+        csvNumber(point.nav, 8),
+        csvNumber(point.cash, 2),
+        csvNumber(point.qqqValue, 2),
+        csvNumber(point.tqqqValue, 2),
+        csvNumber(point.cashWeight, 8),
+        csvNumber(point.qqqWeight, 8),
+        csvNumber(point.tqqqWeight, 8),
+        csvNumber(point.fees, 2),
         point.actionKey || "",
         point.actionDecisionDate || "",
         point.actionExecutionDate || "",
-        point.qqqPrice || "",
+        csvNumber(point.qqqPrice, 4),
         point.tqqqSource || "",
       ]);
     }
@@ -1743,6 +1844,8 @@ function renderChart() {
   canvas.onpointermove = null;
   canvas.onpointerdown = null;
   canvas.onpointerleave = null;
+  canvas.onkeydown = null;
+  canvas.onfocus = null;
   $("tooltip").hidden = true;
   $("chartReadout").textContent = "";
   setChartState("");
@@ -1759,7 +1862,12 @@ function renderChart() {
   ctx.clearRect(0, 0, width, height);
 
   const strategies = visibleStrategies().filter((strategy) => selected.has(strategy.key));
-  if (!strategies.length || !strategies[0].points.length || plotW <= 0) {
+  if (!strategies.length) {
+    setChartState(copy[lang].emptySelection);
+    canvas.setAttribute("aria-label", copy[lang].emptySelection);
+    return;
+  }
+  if (!strategies[0].points.length || plotW <= 0) {
     setChartState(copy[lang].emptyChart);
     canvas.setAttribute("aria-label", copy[lang].emptyChart);
     return;
@@ -1806,7 +1914,7 @@ function renderChart() {
 
   if (qqqBounds) {
     ctx.textAlign = "left";
-    ctx.fillStyle = "#8a94a6";
+    ctx.fillStyle = "#667085";
     for (let i = 0; i <= 4; i += 1) {
       const value = qqqBounds.max - ((qqqBounds.max - qqqBounds.min) * i) / 4;
       ctx.fillText(`$${value.toFixed(0)}`, width - pad.right + 10, pad.top + (plotH * i) / 4);
@@ -1861,7 +1969,7 @@ function renderChart() {
 
   if (qqqBounds) {
     const yQqq = (value) => pad.top + plotH - (value - qqqBounds.min) / (qqqBounds.max - qqqBounds.min) * plotH;
-    ctx.strokeStyle = "#98a2b3";
+    ctx.strokeStyle = "#667085";
     ctx.lineWidth = 1.8;
     ctx.setLineDash([3, 4]);
     ctx.beginPath();
@@ -1881,14 +1989,8 @@ function renderChart() {
     ctx.setLineDash([]);
   }
 
-  const showTooltip = (event) => {
-    const chartRect = canvas.getBoundingClientRect();
-    const x = event.clientX - chartRect.left;
-    if (x < pad.left || x > width - pad.right) {
-      $("tooltip").hidden = true;
-      return;
-    }
-    const index = Math.max(0, Math.min(pointCount - 1, Math.round(((x - pad.left) / plotW) * (pointCount - 1))));
+  let keyboardIndex = pointCount - 1;
+  const renderIndex = (index, x = xFor(index), y = pad.top + 24) => {
     const signalPoint = backtestData.strategies.find((strategy) => strategy.key === "signal")?.points[index];
     const action = signalPoint?.actionKey ? copy[lang].actions[signalPoint.actionKey] : null;
     const visual = signalPoint?.actionKey ? actionVisuals[signalPoint.actionKey] : null;
@@ -1910,35 +2012,66 @@ function renderChart() {
     const tipW = tip.offsetWidth || 280;
     const tipH = tip.offsetHeight || 80;
     tip.style.left = `${Math.min(width - tipW - 8, Math.max(8, x + 14))}px`;
-    tip.style.top = `${Math.min(height - tipH - 8, Math.max(8, event.clientY - chartRect.top - 20))}px`;
+    tip.style.top = `${Math.min(height - tipH - 8, Math.max(8, y - 20))}px`;
+  };
+  const showTooltip = (event) => {
+    const chartRect = canvas.getBoundingClientRect();
+    const x = event.clientX - chartRect.left;
+    if (x < pad.left || x > width - pad.right) {
+      $("tooltip").hidden = true;
+      return;
+    }
+    keyboardIndex = Math.max(0, Math.min(pointCount - 1, Math.round(((x - pad.left) / plotW) * (pointCount - 1))));
+    renderIndex(keyboardIndex, x, event.clientY - chartRect.top);
   };
   canvas.onpointermove = showTooltip;
   canvas.onpointerdown = showTooltip;
   canvas.onpointerleave = () => { $("tooltip").hidden = true; };
   canvas.onmousemove = showTooltip;
   canvas.onmouseleave = () => { $("tooltip").hidden = true; };
+  canvas.onfocus = () => renderIndex(keyboardIndex);
+  canvas.onkeydown = (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home") keyboardIndex = 0;
+    else if (event.key === "End") keyboardIndex = pointCount - 1;
+    else keyboardIndex = Math.max(0, Math.min(pointCount - 1, keyboardIndex + (event.key === "ArrowRight" ? 1 : -1)));
+    renderIndex(keyboardIndex);
+  };
 }
 
-async function fetchJson(url) {
-  const res = await fetch(url, { cache: "no-store" });
-  const text = await res.text();
-  let data = null;
+async function fetchJson(url, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    throw new Error("Invalid JSON response");
+    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      throw new Error("Invalid JSON response");
+    }
+    if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error(lang === "zh" ? "请求超时，请刷新后重试。" : "Request timed out. Refresh and try again.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-  return data;
 }
 
 async function loadMarket() {
   try {
     marketData = await fetchJson("/api/market");
-    renderMarket();
+    currentOrderPlan = null;
+    renderStatic();
+    return true;
   } catch (error) {
     showError(error.message);
+    return false;
   }
 }
 
@@ -1951,12 +2084,13 @@ async function loadBacktest() {
     const data = await fetchJson(`/api/backtest?start=${encodeURIComponent(start)}&cost=${encodeURIComponent(cost)}`);
     if (requestId !== backtestRequestId) return;
     backtestData = data;
-    if (marketData) clearError();
     renderBacktest();
+    return true;
   } catch (error) {
     if (requestId !== backtestRequestId) return;
     showError(error.message);
     setChartState(error.message);
+    return false;
   } finally {
     if (requestId === backtestRequestId) setBacktestLoading(false);
   }
@@ -1964,15 +2098,24 @@ async function loadBacktest() {
 
 async function loadAll() {
   clearError();
-  const results = await Promise.allSettled([loadMarket(), loadBacktest()]);
-  const errors = results.filter((result) => result.status === "rejected").map((result) => result.reason.message);
-  if (errors.length) {
-    showError(errors.join(" / "));
+  return Promise.all([loadMarket(), loadBacktest()]);
+}
+
+async function refreshAllData() {
+  const button = $("refreshDataBtn");
+  button.disabled = true;
+  button.textContent = copy[lang].refreshingData;
+  try {
+    await loadAll();
+  } finally {
+    button.disabled = false;
+    button.textContent = copy[lang].refreshData;
   }
 }
 
 $("zhBtn").addEventListener("click", () => { setLang("zh"); });
 $("enBtn").addEventListener("click", () => { setLang("en"); });
+$("refreshDataBtn").addEventListener("click", refreshAllData);
 $("startInput").addEventListener("change", () => {
   updateShareUrl();
   loadBacktest();
@@ -2008,6 +2151,10 @@ for (const id of ["cashInput", "qqqSharesInput", "tqqqSharesInput", "monthlyCont
   });
 }
 $("fractionalSharesInput").addEventListener("change", () => {
+  currentOrderPlan = null;
+  renderOrderDraft();
+});
+$("executionCostInput").addEventListener("change", () => {
   currentOrderPlan = null;
   renderOrderDraft();
 });

@@ -26,12 +26,14 @@ Account inputs and journal entries stay in browser `localStorage`. They are neve
 
 ## Trust contract
 
-- Ruleset: `2026-07-v3`.
+- Ruleset: `2026-07-v4`.
 - A signal observed at a daily close executes at the next trading session; the backtest never trades at the same close that generated the signal.
 - Backtests use bundled, versioned snapshots instead of live upstream requests, so the same commit reproduces the same result.
 - The default view starts on TQQQ's first actual-history date, 2010-02-11. Earlier audit windows remain available, and their headline evidence excludes synthetic TQQQ history.
 - Every buy and sell includes selectable 0, 5, or 10 basis points of friction; 5 bps is the default.
-- Critical stale signal data disables the current action. Stale ETF quotes disable order drafting.
+- Snapshot fallback is allowed while each source remains inside its freshness window; truly stale signal data disables the current action and stale ETF quotes disable order drafting.
+- Market snapshots and order drafts expire locally after 30 minutes and must be refreshed before use.
+- Historical monthly CAPE observations become visible to the backtest in the following month, avoiding use of a full-month average at that month's open.
 - Sharpe uses monthly unit-NAV excess returns over the modeled cash rate.
 - The allocation-matched benchmark is an ex-post diagnostic using the signal strategy's average cash, QQQ, and TQQQ weights; it is not a pre-registered investable rule.
 
@@ -41,11 +43,12 @@ Decision priority:
 
 1. 2-3 low signals: bottom attack
 2. Post-bottom ramp window: continue lifting TQQQ
-3. 1 low signal or mild drawdown: small QQQ add
-4. Fast crash with no discount: crash defense
-5. Bubble heat for 6+ months: trim TQQQ
-6. Expensive near highs or bubble watch: pause
-7. Otherwise: normal DCA
+3. 1 core low signal: small QQQ add
+4. Fast crash with no core low signal: crash defense
+5. Mild drawdown: small QQQ add
+6. Bubble heat for 6+ months: trim TQQQ
+7. Expensive near highs or bubble watch: pause
+8. Otherwise: normal DCA
 
 Low signals:
 
@@ -68,13 +71,13 @@ Risk policies reuse these same signals:
 
 - Conservative: QQQ and cash only; TQQQ cap 0%.
 - Standard: TQQQ cap 40%, normal floor 10%, post-bottom cap 40%.
-- Aggressive: current main policy, with a 20% normal floor and 90% post-bottom cap.
+- Aggressive: current main policy, with a 20% normal floor and 90% monthly-review cap. Market moves can drift above the cap between manual reviews.
 
 Position rules for the mixed signal strategy:
 
 - 2-3 low signals: deploy about one third of cash into TQQQ, then spend the next 6 months moving toward a 90% TQQQ target.
 - 1 low signal or mild drawdown: buy QQQ with up to 2x the monthly contribution.
-- Fast crash before any discount signal: sell about half of TQQQ into cash and do not buy QQQ/TQQQ that month.
+- Fast crash before any core low signal: sell about half of TQQQ into cash and do not buy QQQ/TQQQ that month.
 - Sustained bubble heat for 6+ months: sell about 1/12 of TQQQ monthly, keep a 20% TQQQ floor, and keep new monthly cash in cash.
 - Normal regime: refill the 20% TQQQ floor first, then buy QQQ; drip surplus cash back at roughly 1/6 per month.
 
@@ -92,7 +95,7 @@ Historical first-of-month sampling under the old rules had two hard failures:
 - CAPE below the 20th percentile never fired after 1985 in monthly samples, so valuation-cheap was dead.
 - COVID March 2020 hit 2 low signals mid-month, but the first trading day still looked normal, so the strategy missed the bottom and later sold on panic alone.
 
-Defaults now use a live-enough cheap threshold, buy-leaning priority over crash sells when a discount is present, and intra-month upgrades.
+Defaults now use a live-enough cheap threshold, core-low priority over crash sells, a reachable fast-crash branch before the softer mild-drawdown cue, and intra-month upgrades.
 
 ## Local Dev
 
@@ -112,6 +115,8 @@ http://127.0.0.1:8765
 npm test
 npm run check
 ```
+
+The default test command runs all eight supported start-window audits against versioned snapshots; live upstream access is not required.
 
 Live upstream smoke test:
 
@@ -147,7 +152,7 @@ Import the repository into Vercel. The static page is `index.html`; serverless A
 
 Backtests use adjusted QQQ/TQQQ closes when available. Before QQQ/TQQQ live history exists, QQQ is proxied from Nasdaq-100 with a 0.7% annual dividend approximation and TQQQ is synthesized from 3x daily Nasdaq-100 returns after a 0.95% annual expense-ratio drag and approximate 2x financing cost. Cash earns FRED FEDFUNDS when available, with a coarse historical fallback. The hidden 80/20 compatibility variant allocates each new monthly contribution 80% to QQQ and 20% to TQQQ, without rebalancing existing holdings. Backtests include the selected flat trading friction but still exclude tax, residual tracking error after inception, borrowing limits, and broker execution constraints.
 
-The free CAPE table is not a point-in-time revision archive. Historical publication and revision bias therefore remains an explicit model limitation; do not interpret threshold precision as causal evidence.
+The free CAPE table is not a point-in-time revision archive. Backtests delay each monthly value until the next month to remove mechanical same-month look-ahead, but historical revision bias remains an explicit limitation; do not interpret threshold precision as causal evidence.
 
 Buying TQQQ shares with cash does not create daily broker margin calls. The fund's internal financing, derivatives, fees, daily compounding, and tracking effects are reflected in actual adjusted TQQQ prices after inception and approximated in synthetic pre-inception data. If the investor uses broker margin to buy TQQQ, margin interest is outside this model and must be added separately.
 
@@ -158,8 +163,8 @@ Treat the top panel as a monthly process control, not a prediction machine:
 1. Read the effective month action and qualitative rule strength.
 2. Compare month-open lock versus live preview. An upgrade means conditions worsened after the open.
 3. Check the vs-QQQ edge card for historical path cost, especially max drawdown and underperformance months.
-4. If you only hold QQQ or only hold TQQQ, use the matching tactical card, not the mixed book.
-5. Enter holdings locally, select a risk policy, and review the next-session order draft before acting manually.
+4. Enter holdings locally, select a risk policy, and review the next-session order draft before acting manually.
+5. If you only hold QQQ or only hold TQQQ, compare the draft with the matching tactical reference card.
 6. Re-check once near month open, and again if the market is crashing mid-month.
 
 This is a research and process tool, not investment advice.

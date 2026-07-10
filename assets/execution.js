@@ -79,11 +79,15 @@
       addOrder("BUY", symbol, shares, price, fee);
       return notional;
     };
-    const sell = (symbol, grossValue) => {
+    const sell = (symbol, grossValue, roundUp = false) => {
       const key = symbol === "QQQ" ? "qqqShares" : "tqqqShares";
       const price = symbol === "QQQ" ? prices.qqq : prices.tqqq;
       const available = state[key];
-      const shares = Math.min(available, roundShares(Math.min(available * price, Math.max(0, grossValue)) / price, fractional));
+      const rawShares = Math.min(available * price, Math.max(0, grossValue)) / price;
+      const factor = fractional ? 1000 : 1;
+      const shares = Math.min(available, roundUp
+        ? Math.ceil(Math.max(0, rawShares) * factor - 1e-9) / factor
+        : roundShares(rawShares, fractional));
       const notional = shares * price;
       const fee = notional * costRate;
       if (shares <= 0) return 0;
@@ -102,13 +106,19 @@
       current = weights(state, prices);
       need = Math.max(0, target - current.tqqqValue);
       if (need <= 0 || rotationPct <= 0) return;
+      const cashBeforeRotation = state.cash;
       const rotated = sell("QQQ", Math.min(current.qqqValue * rotationPct, need));
-      if (rotated > 0) buy("TQQQ", Math.min(state.cash, need));
+      const rotationProceeds = Math.max(0, state.cash - cashBeforeRotation);
+      if (rotated > 0) buy("TQQQ", Math.min(rotationProceeds, need));
     };
 
     const beforeCap = weights(state, prices);
     const maxTqqqValue = beforeCap.total * policy.maxTqqq;
-    if (beforeCap.tqqqValue > maxTqqqValue) sell("TQQQ", beforeCap.tqqqValue - maxTqqqValue);
+    if (beforeCap.tqqqValue > maxTqqqValue) {
+      const excess = beforeCap.tqqqValue - maxTqqqValue;
+      const grossSale = excess / Math.max(1e-9, 1 - policy.maxTqqq * costRate);
+      sell("TQQQ", grossSale, true);
+    }
 
     const key = input.decision.key;
     if (key === "bottomAttack") {
@@ -149,17 +159,18 @@
     const escape = (value) => String(value || "").replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
     const summary = title || (lang === "zh" ? "QQQ/TQQQ 月初检查（休市顺延）" : "QQQ/TQQQ month-open review (shift if market closed)");
     const details = description || (lang === "zh" ? "打开本地操作台，核对数据日期、月初动作、风险档和订单草稿。" : "Open the local cockpit and verify data dates, month-open action, risk policy, and order draft.");
-    const firstReview = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 13, 0, 0));
+    const firstReview = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
     while (firstReview.getUTCDay() === 0 || firstReview.getUTCDay() === 6) firstReview.setUTCDate(firstReview.getUTCDate() + 1);
-    const dtStart = firstReview.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    const dtStart = `${firstReview.toISOString().slice(0, 10).replace(/-/g, "")}T090000`;
     return [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
       "PRODID:-//QQQ TQQQ Cockpit//Monthly Review//EN",
       "CALSCALE:GREGORIAN",
+      "X-WR-TIMEZONE:America/New_York",
       "BEGIN:VEVENT",
       `UID:${uid}`,
-      `DTSTART:${dtStart}`,
+      `DTSTART;TZID=America/New_York:${dtStart}`,
       "DURATION:PT20M",
       "RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1",
       `SUMMARY:${escape(summary)}`,

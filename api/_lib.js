@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const CAPE_URL = "https://www.multpl.com/shiller-pe/table/by-month";
 const CACHE_MS = 15 * 60 * 1000;
-const RULESET_ID = "2026-07-v3";
+const RULESET_ID = "2026-07-v4";
 const VALID_STARTS = new Set(["1990-01-01", "1995-01-01", "2000-01-01", "2005-01-01", "2010-01-01", "2010-02-11", "2015-01-01", "2020-01-01", "2025-01-01"]);
 const VALID_MONTHLY = new Set([1000]);
 const VALID_COST_BPS = new Set([0, 5, 10]);
@@ -99,12 +99,16 @@ async function fetchText(url, timeoutMs = 6000, headers = {}) {
       lastError = error;
       const retryable = !error.statusCode || error.statusCode === 429 || error.statusCode >= 500;
       if (!retryable || attempt === 1) break;
-      await sleep(error.retryAfterMs || (500 + Math.floor(Math.random() * 500)));
+      await sleep(Math.min(error.retryAfterMs || (500 + Math.floor(Math.random() * 500)), 2000));
     } finally {
       clearTimeout(timeout);
     }
   }
   throw lastError;
+}
+
+function yahooBarIsOpen(timestamp, regular, nowSeconds = Math.floor(Date.now() / 1000)) {
+  return Boolean(regular && nowSeconds >= regular.start && nowSeconds < regular.end && timestamp >= regular.start && timestamp < regular.end);
 }
 
 async function fetchYahooSeries(symbol, name, options = {}) {
@@ -114,6 +118,8 @@ async function fetchYahooSeries(symbol, name, options = {}) {
   const text = await fetchText(url, 6000, { "User-Agent": "Mozilla/5.0" });
   const payload = JSON.parse(text);
   const result = payload.chart?.result?.[0];
+  const regular = result?.meta?.currentTradingPeriod?.regular;
+  const nowSeconds = Math.floor(Date.now() / 1000);
   const timestamps = result?.timestamp || [];
   const closes = result?.indicators?.quote?.[0]?.close || [];
   const adjCloses = result?.indicators?.adjclose?.[0]?.adjclose || [];
@@ -121,7 +127,8 @@ async function fetchYahooSeries(symbol, name, options = {}) {
   for (let i = 0; i < timestamps.length; i += 1) {
     const close = Number(closes[i]);
     const adjClose = Number(adjCloses[i]);
-    const value = options.adjusted && Number.isFinite(adjClose) && adjClose > 0 ? adjClose : close;
+    if (yahooBarIsOpen(timestamps[i], regular, nowSeconds)) continue;
+    const value = options.adjusted ? adjClose : close;
     if (Number.isFinite(value) && value > 0 && Number.isFinite(close) && close > 0) {
       const point = { date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), value };
       if (options.adjusted) {
@@ -136,12 +143,14 @@ async function fetchYahooSeries(symbol, name, options = {}) {
 }
 
 async function fetchFredSeries(id) {
-  const csv = await fetchText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(id)}`);
-  return csv.trim().split(/\r?\n/).slice(1).map((line) => {
+  const csv = await fetchText(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(id)}`, 6000, { "User-Agent": "Mozilla/5.0" });
+  const points = csv.trim().split(/\r?\n/).slice(1).map((line) => {
     const [date, raw] = line.split(",");
     const value = Number(raw);
-    return Number.isFinite(value) ? { date, value: value / 100 } : null;
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(value) ? { date, value: value / 100 } : null;
   }).filter(Boolean);
+  if (points.length < 60) throw new Error(`${id} returned too few observations`);
+  return points;
 }
 
 function cleanCell(text) {
@@ -164,19 +173,34 @@ function parseCapeTable(text) {
     }
   }
   if (!out.length) throw new Error("CAPE table could not be parsed");
-  return out;
+  return [...new Map(out.map((point) => [point.date, point])).values()]
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function sourceLagDays(key, points, now = Date.now()) {
+  const point = key === "capeLatestFirst" ? points?.[0] : points?.at(-1);
+  const timestamp = Date.parse(`${point?.date || ""}T00:00:00Z`);
+  return Number.isFinite(timestamp) ? Math.max(0, (now - timestamp) / DAY_MS) : Infinity;
+}
+
+function sourceIsStale(key, points, now = Date.now()) {
+  const maxLagDays = key === "rates" ? 75 : key === "capeLatestFirst" ? 45 : 5;
+  return sourceLagDays(key, points, now) > maxLagDays;
 }
 
 async function cachedSource(key, loader) {
   const cached = sourceCache[key];
-  if (cached && Date.now() - cached.at < CACHE_MS) return { data: cached.data, stale: cached.stale };
+  if (cached && Date.now() - cached.at < CACHE_MS) return { data: cached.data, stale: cached.stale, fromSnapshot: cached.fromSnapshot };
   try {
     const data = await loader();
-    const stale = Boolean(data.fromSnapshot);
-    sourceCache[key] = { at: Date.now(), data, stale };
-    return { data, stale };
+    const fromSnapshot = Boolean(data.fromSnapshot);
+    const stale = sourceIsStale(key, data);
+    sourceCache[key] = { at: Date.now(), data, stale, fromSnapshot };
+    return { data, stale, fromSnapshot };
   } catch (error) {
-    if (cached) return { data: cached.data, stale: true, error: error.message };
+    if (cached) return { data: cached.data, stale: sourceIsStale(key, cached.data), fromSnapshot: cached.fromSnapshot, error: error.message };
     throw error;
   }
 }
@@ -235,7 +259,9 @@ async function loadData() {
     }),
     cachedSource("capeLatestFirst", async () => {
       try {
-        return parseCapeTable(await fetchText(CAPE_URL));
+        const points = parseCapeTable(await fetchText(CAPE_URL, 6000, { "User-Agent": "Mozilla/5.0" }));
+        if (points.length < 60) throw new Error("CAPE returned too few observations");
+        return points;
       } catch (error) {
         const snapshot = loadCapeSnapshot();
         snapshot.fromSnapshot = true;
@@ -247,6 +273,22 @@ async function loadData() {
   const failed = sources.find((source) => source.status === "rejected");
   if (failed) throw failed.reason;
   const [nasdaq, qqq, tqqq, vix, rates, cape] = sources.map((source) => source.value);
+  const staleSources = [
+    nasdaq.stale ? "Nasdaq-100" : null,
+    qqq.stale ? "QQQ" : null,
+    tqqq.stale ? "TQQQ" : null,
+    vix.stale ? "VIX" : null,
+    rates.stale ? "Rates" : null,
+    cape.stale ? "CAPE" : null,
+  ].filter(Boolean);
+  const fallbackSources = [
+    nasdaq.fromSnapshot ? "Nasdaq-100" : null,
+    qqq.fromSnapshot ? "QQQ" : null,
+    tqqq.fromSnapshot ? "TQQQ" : null,
+    vix.fromSnapshot ? "VIX" : null,
+    rates.fromSnapshot ? "Rates" : null,
+    cape.fromSnapshot ? "CAPE" : null,
+  ].filter(Boolean);
   return {
     nasdaq: nasdaq.data,
     qqq: qqq.data,
@@ -254,14 +296,17 @@ async function loadData() {
     vix: vix.data,
     rates: rates.data,
     capeLatestFirst: cape.data,
-    staleSources: [
-      nasdaq.stale ? "Nasdaq-100" : null,
-      qqq.stale ? "QQQ" : null,
-      tqqq.stale ? "TQQQ" : null,
-      vix.stale ? "VIX" : null,
-      rates.stale ? "Rates" : null,
-      cape.stale ? "CAPE" : null,
-    ].filter(Boolean),
+    staleSources,
+    fallbackSources,
+    sourceMode: fallbackSources.length ? "liveWithSnapshotFallback" : "live",
+    sourceLagDays: {
+      nasdaq: sourceLagDays("nasdaq", nasdaq.data),
+      qqq: sourceLagDays("qqq", qqq.data),
+      tqqq: sourceLagDays("tqqq", tqqq.data),
+      vix: sourceLagDays("vix", vix.data),
+      rates: sourceLagDays("rates", rates.data),
+      cape: sourceLagDays("capeLatestFirst", cape.data),
+    },
   };
 }
 
@@ -325,6 +370,15 @@ function mean(values) {
 
 function percentile(values, value) {
   return 100 * values.filter((item) => item <= value).length / values.length;
+}
+
+function capeSeriesForBacktest(latestFirst) {
+  return latestFirst.map((point) => {
+    const date = new Date(`${point.date}T00:00:00Z`);
+    date.setUTCDate(1);
+    date.setUTCMonth(date.getUTCMonth() + 1);
+    return { ...point, date: date.toISOString().slice(0, 10) };
+  });
 }
 
 function recentSeries(points, count) {
@@ -479,21 +533,23 @@ function calculateDecision(state, memory = {}, thresholds = DEFAULT_THRESHOLDS) 
   let key = "normalDca";
   let reason = "noSpecialRule";
 
-  // Priority is buy-leaning before pure crash sells. A single low signal means the
-  // market is already discounted enough that forced TQQQ liquidation is usually wrong
-  // (April 2020 first-day sampling used to sell on panic alone).
+  // Two core lows still override risk cuts. A fast crash with no core low signal
+  // exits before the softer mild-drawdown buy cue so crashDefense is reachable.
   if (lowSignalCount >= 2) {
     key = "bottomAttack";
     reason = "lowSignalConvergence";
   } else if (rampMonths > 0) {
     key = "rampTqqq";
     reason = "postBottomRamp";
-  } else if (lowSignalCount === 1 || softSignals.mildDrawdown) {
+  } else if (lowSignalCount === 1) {
     key = "smallDipBuy";
-    reason = lowSignalCount === 1 ? "singleLowSignal" : "mildDrawdown";
+    reason = "singleLowSignal";
   } else if (defensiveFlags.fastCrash) {
     key = "crashDefense";
-    reason = "fastCrashNoDiscount";
+    reason = "fastCrashNoCoreLow";
+  } else if (softSignals.mildDrawdown) {
+    key = "smallDipBuy";
+    reason = "mildDrawdown";
   } else if (isHeat && heatMonths >= 6) {
     key = "trimHeat";
     reason = "sustainedBubbleHeat";
@@ -660,8 +716,8 @@ function buildMonthlyDecisionLog(prices, nasdaq, vix, capeChrono, states, thresh
 function shouldUpgradeMonthAction(currentKey, liveKey) {
   if (!currentKey || currentKey === liveKey) return false;
   // Only allow upgrades that are more buy-leaning after the month opens, or a pure
-  // risk cut when the month started with no discount. Never flip buy → sell mid-month
-  // after a discount signal already fired.
+  // risk cut when the month started without a core low signal. Never flip buy → sell
+  // mid-month after a core low signal already fired.
   if (liveKey === "bottomAttack" && currentKey !== "bottomAttack") return true;
   if (liveKey === "smallDipBuy" && (currentKey === "normalDca" || currentKey === "pauseAtHigh" || currentKey === "trimHeat")) return true;
   if (liveKey === "crashDefense" && currentKey === "normalDca") return true;
@@ -679,7 +735,7 @@ function firstIndexOfMonth(prices, month) {
 
 async function marketSnapshot() {
   const data = await loadData();
-  const { nasdaq, qqq, tqqq, vix, rates, capeLatestFirst, staleSources } = data;
+  const { nasdaq, qqq, tqqq, vix, rates, capeLatestFirst, staleSources, fallbackSources, sourceLagDays: lagDays } = data;
   const dataSnapshotId = buildDataSnapshotId(data);
   const nasdaqValues = nasdaq.map((point) => point.value);
   const vixValues = vix.map((point) => point.value);
@@ -739,6 +795,9 @@ async function marketSnapshot() {
       fastCrash: DEFAULT_THRESHOLDS.fastCrash,
       highCape: DEFAULT_THRESHOLDS.highCape,
       bubbleCape: DEFAULT_THRESHOLDS.bubbleCape,
+      supportCape: DEFAULT_THRESHOLDS.supportCape,
+      supportDrawdown: DEFAULT_THRESHOLDS.supportDrawdown,
+      quietVix: DEFAULT_THRESHOLDS.quietVix,
     },
   };
   const decisionCriticalStale = staleSources.filter((name) => ["Nasdaq-100", "VIX", "CAPE"].includes(name));
@@ -757,6 +816,8 @@ async function marketSnapshot() {
     rulesetId: RULESET_ID,
     dataSnapshotId,
     staleSources,
+    fallbackSources,
+    sourceLagDays: lagDays,
     executionReady: executionCriticalStale.length === 0 && !quoteDateMismatch,
     executionBlockedSources: executionCriticalStale,
     riskPolicies: RISK_POLICIES,
@@ -1140,24 +1201,32 @@ function replayDecisionMemory(prices, nasdaq, vix, capeChrono, beforeMonth, thre
   return memory;
 }
 
+function enforceTqqqCap(portfolio, prices, maxTqqq) {
+  const total = valueOf(portfolio, prices);
+  const tqqqValue = portfolio.tqqq * prices.tqqq;
+  const excess = tqqqValue - total * maxTqqq;
+  if (excess <= 0 || tqqqValue <= 0) return;
+  const feeRate = (portfolio.costBps || 0) / 10000;
+  const grossSale = excess / Math.max(1e-9, 1 - maxTqqq * feeRate);
+  sellTQQQ(portfolio, Math.min(1, grossSale / tqqqValue), prices.tqqq);
+}
+
 function applySignalAction(portfolio, decision, prices, monthlyAmount) {
+  const policy = RISK_POLICIES.aggressive;
+  enforceTqqqCap(portfolio, prices, policy.maxTqqq);
   if (decision.key === "bottomAttack") {
-    // Seed TQQQ from cash first. If cash was already spent earlier in the month
-    // (common on mid-month upgrades), rotate a slice of QQQ so the attack is not a no-op.
-    const cashSeed = portfolio.cash / 3;
-    buyTQQQ(portfolio, cashSeed, prices.tqqq);
-    buyTQQQToTarget(portfolio, 0.35, prices, 0.25, portfolio.cash);
+    buyTQQQToTarget(portfolio, policy.bottomTqqqTarget, prices, 0.25, portfolio.cash / 3);
   } else if (decision.key === "crashDefense") {
     sellTQQQ(portfolio, 0.5, prices.tqqq);
   } else if (decision.key === "rampTqqq") {
     const cashLimit = monthlySpendWithDrip(portfolio, monthlyAmount);
-    buyTQQQToTarget(portfolio, 0.9, prices, 1 / Math.max(1, decision.rampMonths), cashLimit);
+    buyTQQQToTarget(portfolio, policy.rampTqqqTarget, prices, 1 / Math.max(1, decision.rampMonths), cashLimit);
   } else if (decision.key === "smallDipBuy") {
     buyQQQ(portfolio, Math.min(portfolio.cash, monthlyAmount * 2), prices.qqq);
   } else if (decision.key === "trimHeat") {
-    sellTQQQWithFloor(portfolio, 1 / 12, prices, 0.2);
+    sellTQQQWithFloor(portfolio, 1 / 12, prices, policy.normalTqqqFloor);
   } else if (decision.key === "normalDca") {
-    buyTQQQToTarget(portfolio, 0.2, prices);
+    buyTQQQToTarget(portfolio, policy.normalTqqqFloor, prices);
     buyQQQ(portfolio, monthlySpendWithDrip(portfolio, monthlyAmount), prices.qqq);
   }
 }
@@ -1448,7 +1517,7 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
   const { nasdaq, vix, capeLatestFirst } = data;
   const prices = data.prices || buildPrices(data.nasdaq, data.qqq, data.tqqq, data.rates);
   if (startDate > prices.at(-1).date) throw new HttpError(400, "Start is after the latest available market date.");
-  const capeChrono = [...capeLatestFirst].reverse();
+  const capeChrono = capeSeriesForBacktest(capeLatestFirst).reverse();
   const portfolios = {
     qqq: emptyPortfolio(costBps),
     tqqq: emptyPortfolio(costBps),
@@ -1504,7 +1573,6 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
       monthAction = null;
       monthDecisionDate = null;
       monthExecutionDate = null;
-      pendingAction = null;
 
       for (const portfolio of Object.values(portfolios)) {
         addContribution(portfolio, monthlyAmount, price);
@@ -1516,7 +1584,7 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
       buyTQQQ(portfolios.blend8020, portfolios.blend8020.cash, price.tqqq);
     }
 
-    if (pendingAction && pendingAction.month === month) {
+    if (pendingAction && pendingAction.decisionDate < price.date) {
       const priorAction = monthAction;
       applySignalAction(portfolios.signal, pendingAction.decision, price, monthlyAmount);
       applySignalQqqAction(portfolios.signalQqq, pendingAction.decision, price, monthlyAmount);
@@ -1605,7 +1673,7 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
   const dataSnapshotId = buildDataSnapshotId(data);
   const prices = buildPrices(data.nasdaq, data.qqq, data.tqqq, data.rates);
   data.prices = prices;
-  const capeChrono = [...data.capeLatestFirst].reverse();
+  const capeChrono = capeSeriesForBacktest(data.capeLatestFirst).reverse();
   const states = buildStates(prices, data.nasdaq, data.vix, capeChrono);
   const { finalPrices, portfolios, actionStats } = runBacktest(data, startDate, monthlyAmount, DEFAULT_THRESHOLDS, states, null, costBps);
   const strategies = summarizePortfolios(portfolios, finalPrices, actionStats);
@@ -1669,10 +1737,10 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
       },
     },
     modelNotes: {
-      cape: `CAPE is S&P 500 Shiller PE, not Nasdaq-100 PE. Percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window. Cheap fires below the ${DEFAULT_THRESHOLDS.cheapCape}th percentile, or below the ${DEFAULT_THRESHOLDS.supportCape}th percentile when Nasdaq-100 is down ${Math.abs(DEFAULT_THRESHOLDS.supportDrawdown)}%+. The free historical table is not a point-in-time revision archive, so publication and revision bias remain a disclosed limitation.`,
+      cape: `CAPE is S&P 500 Shiller PE, not Nasdaq-100 PE. Percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window. Backtests expose each monthly CAPE observation from the next month to avoid using a full-month average at that month's open. Cheap fires below the ${DEFAULT_THRESHOLDS.cheapCape}th percentile, or below the ${DEFAULT_THRESHOLDS.supportCape}th percentile when Nasdaq-100 is down ${Math.abs(DEFAULT_THRESHOLDS.supportDrawdown)}%+. The free historical table is not a point-in-time revision archive, so revision bias remains a disclosed limitation.`,
       drawdown: `Drawdown uses a rolling ${ROLLING_HIGH_DAYS / 252}-year high of 5-day Nasdaq-100 averages. Deep <= ${DEFAULT_THRESHOLDS.deepDrawdown}%, mild <= ${DEFAULT_THRESHOLDS.mildDrawdown}%.`,
       vix: `VIX is S&P 500 implied vol, used as a cross-asset panic proxy. Panic threshold is ${DEFAULT_THRESHOLDS.panicVix} on the 5-day average.`,
-      cadence: "Monthly cash is contributed on the first trading day. A signal observed at a daily close executes at the next trading session. Intra-month upgrades follow the same one-session lag.",
+      cadence: `Monthly cash is contributed on the first trading day. A signal observed at a daily close executes at the next trading session. Intra-month upgrades follow the same one-session lag. The main strategy enforces its ${RISK_POLICIES.aggressive.maxTqqq * 100}% TQQQ cap when a monthly action executes; market moves can drift above that cap between reviews.`,
       costs: `Each buy and sell includes ${costBps} bps of trading friction. QQQ/TQQQ use adjusted ETF closes when available; older pre-inception sections are synthetic. Synthetic QQQ adds a 0.7% dividend proxy. Synthetic TQQQ deducts 0.95% expense ratio plus approximate 2x financing cost. Cash earns FEDFUNDS when available, otherwise a coarse historical short-rate approximation.`,
       tqqqHoldingCosts: "Buying TQQQ shares with cash does not create daily broker margin calls. Fund leverage, derivatives, financing, fees, compounding, and tracking effects are embedded in actual adjusted TQQQ closes after inception and approximated in synthetic pre-inception data. Broker margin interest is excluded and should be added separately if TQQQ is bought with borrowed money.",
       wrappers: "Tactical QQQ and tactical TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash.",
@@ -1697,6 +1765,7 @@ module.exports = {
   RISK_POLICIES,
   RULESET_ID,
   buildDataSnapshotId,
+  capeSeriesForBacktest,
   fetchText,
   loadData,
   loadSnapshotData,
@@ -1706,5 +1775,7 @@ module.exports = {
   fetchYahooSeries,
   sendJson,
   signalGroups,
+  sourceIsStale,
+  yahooBarIsOpen,
   runBacktest,
 };
