@@ -78,6 +78,7 @@ Position rules for the mixed signal strategy:
 - 2-3 low signals: deploy about one third of cash into TQQQ, then spend the next 6 months moving toward a 90% TQQQ target.
 - 1 low signal or mild drawdown: buy QQQ with up to 2x the monthly contribution.
 - Fast crash before any core low signal: sell about half of TQQQ into cash and do not buy QQQ/TQQQ that month.
+- Fast-crash defense is historically rare (zero executions in the default actual-TQQQ headline sample); treat it as a mechanical guardrail, not validated crash insurance.
 - Sustained bubble heat for 6+ months: sell about 1/12 of TQQQ monthly, keep a 20% TQQQ floor, and keep new monthly cash in cash.
 - Normal regime: refill the 20% TQQQ floor first, then buy QQQ; drip surplus cash back at roughly 1/6 per month.
 

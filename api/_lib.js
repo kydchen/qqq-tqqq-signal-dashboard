@@ -1746,6 +1746,7 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
       wrappers: "Tactical QQQ and tactical TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash.",
       sharpe: "Sharpe uses monthly unit-NAV excess returns over the modeled cash rate, annualized by sqrt(12).",
       evidence: `The headline excludes synthetic TQQQ history and starts at ${evidenceStart}. The allocation-matched benchmark is an ex-post diagnostic rebalanced monthly to the signal strategy's average cash, QQQ, and TQQQ weights; it is not an investable pre-registered rule.`,
+      rareActions: `Fast-crash defense executed ${signalEvidence?.actionCounts?.crashDefense || 0} times in the headline sample. Treat it as a mechanical guardrail, not a statistically validated source of protection.`,
       limits: "No taxes, no residual tracking error after inception, and no broker constraints. Attribution is path-linked, not causal. Past edge versus QQQ DCA is not a guarantee of future edge.",
       notAdvice: "This dashboard is a research and process tool, not investment advice.",
     },
