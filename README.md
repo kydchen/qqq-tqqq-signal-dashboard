@@ -26,7 +26,7 @@ Account inputs and journal entries stay in browser `localStorage`. They are neve
 
 ## Trust contract
 
-- Ruleset: `2026-07-v4`.
+- Ruleset: `2026-07-v5`.
 - A signal observed at a daily close executes at the next trading session; the backtest never trades at the same close that generated the signal.
 - Backtests use bundled, versioned snapshots instead of live upstream requests, so the same commit reproduces the same result.
 - The default view starts on TQQQ's first actual-history date, 2010-02-11. Earlier audit windows remain available, and their headline evidence excludes synthetic TQQQ history.
@@ -47,7 +47,7 @@ Decision priority:
 4. Fast crash with no core low signal: crash defense
 5. Mild drawdown: small QQQ add
 6. Bubble heat for 6+ months: trim TQQQ
-7. Expensive near highs or bubble watch: pause
+7. Expensive near highs or bubble watch: throttle to half-size core QQQ buying and pause new TQQQ
 8. Otherwise: normal DCA
 
 Low signals:
@@ -79,7 +79,8 @@ Position rules for the mixed signal strategy:
 - 1 low signal or mild drawdown: buy QQQ with up to 2x the monthly contribution.
 - Fast crash before any core low signal: sell about half of TQQQ into cash and do not buy QQQ/TQQQ that month.
 - Fast-crash defense is historically rare (zero executions in the default actual-TQQQ headline sample); treat it as a mechanical guardrail, not validated crash insurance.
-- Sustained bubble heat for 6+ months: sell about 1/12 of TQQQ monthly, keep a 20% TQQQ floor, and keep new monthly cash in cash.
+- Expensive near highs or bubble watch: invest 50% of the monthly contribution in core QQQ, pause new TQQQ buying, and retain the other 50% as cash.
+- Sustained bubble heat for 6+ months: invest 50% of the monthly contribution in core QQQ while selling about 1/12 of TQQQ monthly and keeping a 20% TQQQ floor. This is a shift from leveraged to unleveraged exposure, not contradictory trading.
 - Normal regime: refill the 20% TQQQ floor first, then buy QQQ; drip surplus cash back at roughly 1/6 per month.
 
 The Tactical QQQ and Tactical TQQQ variants reuse the same monthly signal decision but restrict the execution universe:
@@ -97,6 +98,10 @@ Historical first-of-month sampling under the old rules had two hard failures:
 - COVID March 2020 hit 2 low signals mid-month, but the first trading day still looked normal, so the strategy missed the bottom and later sold on panic alone.
 
 Defaults now use a live-enough cheap threshold, core-low priority over crash sells, a reachable fast-crash branch before the softer mild-drawdown cue, and intra-month upgrades.
+
+The 50% high-regime QQQ rate is a deliberately simple participation floor, not an optimized parameter. A 191-monthly-start audit found the revised rule finished ahead of the prior cash-heavier rule in 78.5% of starts and reduced the dispersion of excess IRR versus QQQ. The tradeoff is intentional: a new account that starts just before a correction loses more than one left in cash. In the bundled snapshots, the worst recent rolling endpoint was a 2025-01 start ending 2025-04, when the revised rule lagged the prior rule by about 6.5%; the 2023-start maximum drawdown was about 26.2% versus 22.8% for QQQ.
+
+Use the mixed rule as a tactical contribution and leverage overlay, not as a universal promise to beat QQQ from every start date. Existing holdings still make outcomes path-dependent; a future target-allocation ruleset would be needed to remove that limitation rather than merely reduce it.
 
 ## Local Dev
 
@@ -117,7 +122,7 @@ npm test
 npm run check
 ```
 
-The default test command runs all eight supported start-window audits against versioned snapshots; live upstream access is not required.
+The default test command runs all ten supported start-window audits against versioned snapshots; live upstream access is not required.
 
 Live upstream smoke test:
 

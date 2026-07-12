@@ -4,6 +4,7 @@
   root.ExecutionPlanner = api;
 }(typeof globalThis !== "undefined" ? globalThis : this, () => {
   const ACTIONS = new Set(["bottomAttack", "rampTqqq", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"]);
+  const DEFAULT_CORE_QQQ_HIGH_REGIME_FRACTION = 0.5;
 
   function finiteNonNegative(value, label, max = 1e12) {
     const number = Number(value);
@@ -54,6 +55,11 @@
       tqqqShares: finiteNonNegative(input.account?.tqqqShares, "TQQQ shares"),
     };
     const monthly = finiteNonNegative(input.account?.monthlyContribution, "Monthly contribution", 1e8);
+    const coreQqqHighRegimeFraction = finiteNonNegative(
+      input.coreQqqHighRegimeFraction ?? DEFAULT_CORE_QQQ_HIGH_REGIME_FRACTION,
+      "Core QQQ high-regime fraction",
+      1,
+    );
     const fractional = input.account?.fractionalShares !== false;
     const costBps = finiteNonNegative(input.costBps ?? 5, "Trading cost", 10);
     if (![0, 5, 10].includes(costBps)) throw new Error("Trading cost must be 0, 5, or 10 basis points.");
@@ -132,9 +138,12 @@
     } else if (key === "crashDefense") {
       sell("TQQQ", state.tqqqShares * prices.tqqq * 0.5);
     } else if (key === "trimHeat") {
+      buy("QQQ", Math.min(state.cash, monthly * coreQqqHighRegimeFraction));
       const current = weights(state, prices);
       const floorValue = current.total * policy.normalTqqqFloor;
       sell("TQQQ", Math.max(0, Math.min(current.tqqqValue / 12, current.tqqqValue - floorValue)));
+    } else if (key === "pauseAtHigh") {
+      buy("QQQ", Math.min(state.cash, monthly * coreQqqHighRegimeFraction));
     } else if (key === "normalDca") {
       if (policy.maxTqqq > 0) buyTqqqToTarget(policy.normalTqqqFloor);
       buy("QQQ", spendWithDrip());

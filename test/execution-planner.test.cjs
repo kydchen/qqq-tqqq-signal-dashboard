@@ -43,10 +43,22 @@ test("conservative policy removes existing TQQQ before applying the monthly acti
   assert.equal(result.ending.tqqqValue, 0);
 });
 
-test("pause action retains the monthly contribution as cash", () => {
+test("pause action keeps core QQQ participation and retains half the contribution", () => {
   const result = plan({ decision: { key: "pauseAtHigh", rampMonths: 0 } });
-  assert.equal(result.orders.length, 0);
-  assert.equal(result.retainedCash, 1000);
+  const buy = result.orders.find((order) => order.side === "BUY" && order.symbol === "QQQ");
+  assert(buy);
+  assert(buy.notional + buy.estimatedCost <= 500 + 0.01);
+  assert(result.retainedCash >= 499 && result.retainedCash <= 501);
+});
+
+test("heat trim buys core QQQ while reducing TQQQ", () => {
+  const result = plan({
+    account: { cash: 0, qqqShares: 10, tqqqShares: 100, monthlyContribution: 1000, fractionalShares: true },
+    policy: policies.aggressive,
+    decision: { key: "trimHeat", rampMonths: 0 },
+  });
+  assert(result.orders.some((order) => order.side === "BUY" && order.symbol === "QQQ"));
+  assert(result.orders.some((order) => order.side === "SELL" && order.symbol === "TQQQ"));
 });
 
 test("invalid account values fail loudly", () => {
