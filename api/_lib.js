@@ -3,11 +3,12 @@ const crypto = require("crypto");
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const CAPE_URL = "https://www.multpl.com/shiller-pe/table/by-month";
 const CACHE_MS = 15 * 60 * 1000;
-const RULESET_ID = "2026-07-v4";
-const VALID_STARTS = new Set(["1990-01-01", "1995-01-01", "2000-01-01", "2005-01-01", "2010-01-01", "2010-02-11", "2015-01-01", "2020-01-01", "2025-01-01"]);
+const RULESET_ID = "2026-07-v5";
+const VALID_STARTS = new Set(["1990-01-01", "1995-01-01", "2000-01-01", "2005-01-01", "2010-01-01", "2010-02-11", "2015-01-01", "2020-01-01", "2023-01-01", "2024-01-01", "2025-01-01"]);
 const VALID_MONTHLY = new Set([1000]);
 const VALID_COST_BPS = new Set([0, 5, 10]);
 const DEFAULT_COST_BPS = 5;
+const CORE_QQQ_HIGH_REGIME_FRACTION = 0.5;
 const CAPE_ROLLING_MONTHS = 360;
 const ROLLING_HIGH_DAYS = 252 * 5;
 const QQQ_DIVIDEND_YIELD = 0.007;
@@ -821,6 +822,7 @@ async function marketSnapshot() {
     executionReady: executionCriticalStale.length === 0 && !quoteDateMismatch,
     executionBlockedSources: executionCriticalStale,
     riskPolicies: RISK_POLICIES,
+    coreQqqHighRegimeFraction: CORE_QQQ_HIGH_REGIME_FRACTION,
     dataQuality: buildDataQuality(data, prices),
     cadence: {
       mode: "monthlyContributionWithIntraMonthUpgrades",
@@ -1224,7 +1226,10 @@ function applySignalAction(portfolio, decision, prices, monthlyAmount) {
   } else if (decision.key === "smallDipBuy") {
     buyQQQ(portfolio, Math.min(portfolio.cash, monthlyAmount * 2), prices.qqq);
   } else if (decision.key === "trimHeat") {
+    buyQQQ(portfolio, Math.min(portfolio.cash, monthlyAmount * CORE_QQQ_HIGH_REGIME_FRACTION), prices.qqq);
     sellTQQQWithFloor(portfolio, 1 / 12, prices, policy.normalTqqqFloor);
+  } else if (decision.key === "pauseAtHigh") {
+    buyQQQ(portfolio, Math.min(portfolio.cash, monthlyAmount * CORE_QQQ_HIGH_REGIME_FRACTION), prices.qqq);
   } else if (decision.key === "normalDca") {
     buyTQQQToTarget(portfolio, policy.normalTqqqFloor, prices);
     buyQQQ(portfolio, monthlySpendWithDrip(portfolio, monthlyAmount), prices.qqq);
@@ -1701,6 +1706,7 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
   return {
     generatedAt: new Date().toISOString(),
     rulesetId: RULESET_ID,
+    coreQqqHighRegimeFraction: CORE_QQQ_HIGH_REGIME_FRACTION,
     dataSnapshotId,
     start: startDate,
     monthly: monthlyAmount,
@@ -1740,14 +1746,14 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
       cape: `CAPE is S&P 500 Shiller PE, not Nasdaq-100 PE. Percentile uses a rolling ${CAPE_ROLLING_MONTHS / 12}-year monthly window. Backtests expose each monthly CAPE observation from the next month to avoid using a full-month average at that month's open. Cheap fires below the ${DEFAULT_THRESHOLDS.cheapCape}th percentile, or below the ${DEFAULT_THRESHOLDS.supportCape}th percentile when Nasdaq-100 is down ${Math.abs(DEFAULT_THRESHOLDS.supportDrawdown)}%+. The free historical table is not a point-in-time revision archive, so revision bias remains a disclosed limitation.`,
       drawdown: `Drawdown uses a rolling ${ROLLING_HIGH_DAYS / 252}-year high of 5-day Nasdaq-100 averages. Deep <= ${DEFAULT_THRESHOLDS.deepDrawdown}%, mild <= ${DEFAULT_THRESHOLDS.mildDrawdown}%.`,
       vix: `VIX is S&P 500 implied vol, used as a cross-asset panic proxy. Panic threshold is ${DEFAULT_THRESHOLDS.panicVix} on the 5-day average.`,
-      cadence: `Monthly cash is contributed on the first trading day. A signal observed at a daily close executes at the next trading session. Intra-month upgrades follow the same one-session lag. The main strategy enforces its ${RISK_POLICIES.aggressive.maxTqqq * 100}% TQQQ cap when a monthly action executes; market moves can drift above that cap between reviews.`,
+      cadence: `Monthly cash is contributed on the first trading day. A signal observed at a daily close executes at the next trading session. Intra-month upgrades follow the same one-session lag. During pause-at-high and heat-trim months, ${CORE_QQQ_HIGH_REGIME_FRACTION * 100}% of the monthly contribution still buys core QQQ while new TQQQ buying stays paused. The main strategy enforces its ${RISK_POLICIES.aggressive.maxTqqq * 100}% TQQQ cap when a monthly action executes; market moves can drift above that cap between reviews.`,
       costs: `Each buy and sell includes ${costBps} bps of trading friction. QQQ/TQQQ use adjusted ETF closes when available; older pre-inception sections are synthetic. Synthetic QQQ adds a 0.7% dividend proxy. Synthetic TQQQ deducts 0.95% expense ratio plus approximate 2x financing cost. Cash earns FEDFUNDS when available, otherwise a coarse historical short-rate approximation.`,
       tqqqHoldingCosts: "Buying TQQQ shares with cash does not create daily broker margin calls. Fund leverage, derivatives, financing, fees, compounding, and tracking effects are embedded in actual adjusted TQQQ closes after inception and approximated in synthetic pre-inception data. Broker margin interest is excluded and should be added separately if TQQQ is bought with borrowed money.",
       wrappers: "Tactical QQQ and tactical TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash.",
       sharpe: "Sharpe uses monthly unit-NAV excess returns over the modeled cash rate, annualized by sqrt(12).",
       evidence: `The headline excludes synthetic TQQQ history and starts at ${evidenceStart}. The allocation-matched benchmark is an ex-post diagnostic rebalanced monthly to the signal strategy's average cash, QQQ, and TQQQ weights; it is not an investable pre-registered rule.`,
       rareActions: `Fast-crash defense executed ${signalEvidence?.actionCounts?.crashDefense || 0} times in the headline sample. Treat it as a mechanical guardrail, not a statistically validated source of protection.`,
-      limits: "No taxes, no residual tracking error after inception, and no broker constraints. Attribution is path-linked, not causal. Past edge versus QQQ DCA is not a guarantee of future edge.",
+      limits: "The 50% high-regime QQQ rate is a design choice, not an optimized parameter. It reduces long bull-market cash drag but increases cold-start drawdown: in the bundled 2023-start audit, signal max drawdown was about 26.2% versus 22.8% for QQQ. The worst recent rolling endpoint was a 2025-01 start ending 2025-04, when deliberate market participation lagged the cash-heavier prior rule by about 6.5%. No taxes, no residual tracking error after inception, and no broker constraints. Attribution is path-linked, not causal. Past edge versus QQQ DCA is not a guarantee of future edge.",
       notAdvice: "This dashboard is a research and process tool, not investment advice.",
     },
     strategies,
@@ -1761,6 +1767,7 @@ module.exports = {
   backtest,
   calculateDecision,
   decisionConfidence,
+  CORE_QQQ_HIGH_REGIME_FRACTION,
   DEFAULT_COST_BPS,
   DEFAULT_THRESHOLDS,
   RISK_POLICIES,

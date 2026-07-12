@@ -6,6 +6,7 @@ const {
   capeSeriesForBacktest,
   calculateDecision,
   decisionConfidence,
+  CORE_QQQ_HIGH_REGIME_FRACTION,
   marketSnapshot,
   parseCapeTable,
   DEFAULT_COST_BPS,
@@ -17,7 +18,7 @@ const {
 
 const visibleStrategyKeys = ["qqq", "signalQqq", "tqqq", "signalTqqq", "signal"];
 const allStrategyKeys = ["qqq", "tqqq", "blend8020", "signal", "signalQqq", "signalTqqq"];
-const auditedStarts = ["1990-01", "1995-01", "2000-01", "2005-01", "2010-01", "2015-01", "2020-01", "2025-01"];
+const auditedStarts = ["1990-01", "1995-01", "2000-01", "2005-01", "2010-01", "2015-01", "2020-01", "2023-01", "2024-01", "2025-01"];
 
 function assertFinite(value, label) {
   assert(Number.isFinite(value), label);
@@ -28,6 +29,7 @@ function assertBacktestResult(result, start) {
   assert.match(result.dataSnapshotId, /^snapshot-[a-f0-9]{16}$/);
   assert.equal(result.costBps, DEFAULT_COST_BPS);
   assert.equal(result.executionLag, "nextTradingSession");
+  assert.equal(result.coreQqqHighRegimeFraction, CORE_QQQ_HIGH_REGIME_FRACTION);
   assert.deepEqual(result.strategies.map((strategy) => strategy.key), allStrategyKeys);
   assert(result.dataQuality.qqqActualStart);
   assert(result.dataQuality.tqqqActualStart);
@@ -101,7 +103,9 @@ function assertBacktestResult(result, start) {
     }
   }
 
-  assert.equal(result.walkForward.length, ["2025-01"].includes(start) ? 0 : ["2020-01"].includes(start) ? 1 : ["2015-01"].includes(start) ? 2 : ["2010-01"].includes(start) ? 3 : 4);
+  const expectedWalkForward = ["2010-01-01", "2015-01-01", "2020-01-01", "2025-01-01"]
+    .filter((split) => split > result.start && split < result.end).length;
+  assert.equal(result.walkForward.length, expectedWalkForward);
   for (const row of result.walkForward) {
     assert(row.split > result.start, `${start} ${row.split} split`);
     assert(row.validationEnd >= row.validationStart, `${start} ${row.split} validation window`);
@@ -115,6 +119,8 @@ function assertBacktestResult(result, start) {
   assert(result.modelNotes.tqqqHoldingCosts.includes("does not create daily broker margin calls"));
   assert(result.modelNotes.cadence.includes("next trading session"));
   assert(result.modelNotes.sharpe.includes("excess returns"));
+  assert(result.modelNotes.limits.includes("design choice"));
+  assert(result.modelNotes.limits.includes("2025-01"));
   assert.equal(result.dataQuality.sourceMode, "versionedSnapshots");
   assert.equal(result.dataQuality.capePointInTime, false);
   assert(result.modelNotes.notAdvice);
@@ -123,8 +129,9 @@ function assertBacktestResult(result, start) {
 }
 
 async function main() {
-  assert.equal(RULESET_ID, "2026-07-v4");
+  assert.equal(RULESET_ID, "2026-07-v5");
   assert.equal(DEFAULT_COST_BPS, 5);
+  assert.equal(CORE_QQQ_HIGH_REGIME_FRACTION, 0.5);
   assert.equal(DEFAULT_THRESHOLDS.cheapCape, 35);
   assert.equal(DEFAULT_THRESHOLDS.panicVix, 32);
 
@@ -211,6 +218,9 @@ async function main() {
     if (start === "2010-01") {
       assert(strategies.signal.actionCounts.bottomAttack >= 1, "2010+ should retain bottomAttack coverage");
       assert(strategies.signal.vsQqq.finalRelativeMultiple > 0.8, "signal should remain in the same ballpark or better vs QQQ over long samples");
+    }
+    if (start === "2025-01") {
+      assert(strategies.signal.vsQqq.finalRelativeMultiple > 1, "core QQQ floor should prevent the 2025 cold-start strategy from lagging QQQ");
     }
   }
 

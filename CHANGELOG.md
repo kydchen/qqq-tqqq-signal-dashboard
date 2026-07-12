@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 - 2026-07-12
+
+Ruleset `2026-07-v5` keeps core QQQ participation alive during long expensive bull markets.
+
+- Replaced the mixed strategy's zero-buy high regime with a 50% monthly QQQ core purchase while keeping new TQQQ buying paused.
+- Kept the same 50% core QQQ purchase during sustained heat while continuing the existing gradual TQQQ trim.
+- Selected 50% after testing 25/50/60/75/100% variants across start windows and 0/5/10 bp costs; it fixed the 2024/2025 cold-start gap without the larger drawdown increase of 60-75% variants.
+- Aligned the deterministic backtest, browser order planner, bilingual rule copy, and regression checks.
+- Added 2023 and 2024 as first-class backtest start windows so the AI bull-market cold-start behavior is visible on the site.
+
 ## 0.4.0 - 2026-07-10
 
 Ruleset `2026-07-v4` hardens the financial trust boundary after an external adversarial review.
