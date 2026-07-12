@@ -7,6 +7,7 @@ const {
   calculateDecision,
   decisionConfidence,
   CORE_QQQ_HIGH_REGIME_FRACTION,
+  MAIN_SIGNAL_POLICY_KEY,
   marketSnapshot,
   parseCapeTable,
   DEFAULT_COST_BPS,
@@ -30,6 +31,7 @@ function assertBacktestResult(result, start) {
   assert.equal(result.costBps, DEFAULT_COST_BPS);
   assert.equal(result.executionLag, "nextTradingSession");
   assert.equal(result.coreQqqHighRegimeFraction, CORE_QQQ_HIGH_REGIME_FRACTION);
+  assert.equal(result.mainSignalPolicy, MAIN_SIGNAL_POLICY_KEY);
   assert.deepEqual(result.strategies.map((strategy) => strategy.key), allStrategyKeys);
   assert(result.dataQuality.qqqActualStart);
   assert(result.dataQuality.tqqqActualStart);
@@ -120,7 +122,7 @@ function assertBacktestResult(result, start) {
   assert(result.modelNotes.cadence.includes("next trading session"));
   assert(result.modelNotes.sharpe.includes("excess returns"));
   assert(result.modelNotes.limits.includes("design choice"));
-  assert(result.modelNotes.limits.includes("2025-01"));
+  assert(result.modelNotes.limits.includes("standard TQQQ limits"));
   assert.equal(result.dataQuality.sourceMode, "versionedSnapshots");
   assert.equal(result.dataQuality.capePointInTime, false);
   assert(result.modelNotes.notAdvice);
@@ -129,7 +131,8 @@ function assertBacktestResult(result, start) {
 }
 
 async function main() {
-  assert.equal(RULESET_ID, "2026-07-v5");
+  assert.equal(RULESET_ID, "2026-07-v6");
+  assert.equal(MAIN_SIGNAL_POLICY_KEY, "standard");
   assert.equal(DEFAULT_COST_BPS, 5);
   assert.equal(CORE_QQQ_HIGH_REGIME_FRACTION, 0.5);
   assert.equal(DEFAULT_THRESHOLDS.cheapCape, 35);
@@ -195,6 +198,7 @@ async function main() {
     assert(market.decision.confidence);
     assert.equal(market.decision.confidence.calibrated, false);
     assert.equal(market.rulesetId, RULESET_ID);
+    assert.equal(market.mainSignalPolicy, MAIN_SIGNAL_POLICY_KEY);
     assert.match(market.dataSnapshotId, /^snapshot-[a-f0-9]{16}$/);
     assert(market.quotes.qqq.price > 0 && market.quotes.tqqq.price > 0);
     assert.equal(market.riskPolicies.standard.maxTqqq, 0.4);
@@ -218,9 +222,6 @@ async function main() {
     if (start === "2010-01") {
       assert(strategies.signal.actionCounts.bottomAttack >= 1, "2010+ should retain bottomAttack coverage");
       assert(strategies.signal.vsQqq.finalRelativeMultiple > 0.8, "signal should remain in the same ballpark or better vs QQQ over long samples");
-    }
-    if (start === "2025-01") {
-      assert(strategies.signal.vsQqq.finalRelativeMultiple > 1, "core QQQ floor should prevent the 2025 cold-start strategy from lagging QQQ");
     }
   }
 

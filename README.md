@@ -26,7 +26,7 @@ Account inputs and journal entries stay in browser `localStorage`. They are neve
 
 ## Trust contract
 
-- Ruleset: `2026-07-v5`.
+- Ruleset: `2026-07-v6`.
 - A signal observed at a daily close executes at the next trading session; the backtest never trades at the same close that generated the signal.
 - Backtests use bundled, versioned snapshots instead of live upstream requests, so the same commit reproduces the same result.
 - The default view starts on TQQQ's first actual-history date, 2010-02-11. Earlier audit windows remain available, and their headline evidence excludes synthetic TQQQ history.
@@ -70,18 +70,18 @@ Execution:
 Risk policies reuse these same signals:
 
 - Conservative: QQQ and cash only; TQQQ cap 0%.
-- Standard: TQQQ cap 40%, normal floor 10%, post-bottom cap 40%.
-- Aggressive: current main policy, with a 20% normal floor and 90% monthly-review cap. Market moves can drift above the cap between manual reviews.
+- Standard: the main mixed-strategy and backtest policy, with a 40% TQQQ cap, 10% normal floor, 25% bottom target, and 40% post-bottom target.
+- Aggressive: optional manual-execution scenario, with a 20% normal floor, 35% bottom target, and 90% monthly-review cap. Market moves can drift above the cap between manual reviews.
 
 Position rules for the mixed signal strategy:
 
-- 2-3 low signals: deploy about one third of cash into TQQQ, then spend the next 6 months moving toward a 90% TQQQ target.
+- 2-3 low signals: deploy up to about one third of cash into TQQQ toward a 25% initial target, then spend the next 6 months moving toward a 40% TQQQ target.
 - 1 low signal or mild drawdown: buy QQQ with up to 2x the monthly contribution.
 - Fast crash before any core low signal: sell about half of TQQQ into cash and do not buy QQQ/TQQQ that month.
 - Fast-crash defense is historically rare (zero executions in the default actual-TQQQ headline sample); treat it as a mechanical guardrail, not validated crash insurance.
 - Expensive near highs or bubble watch: invest 50% of the monthly contribution in core QQQ, pause new TQQQ buying, and retain the other 50% as cash.
-- Sustained bubble heat for 6+ months: invest 50% of the monthly contribution in core QQQ while selling about 1/12 of TQQQ monthly and keeping a 20% TQQQ floor. This is a shift from leveraged to unleveraged exposure, not contradictory trading.
-- Normal regime: refill the 20% TQQQ floor first, then buy QQQ; drip surplus cash back at roughly 1/6 per month.
+- Sustained bubble heat for 6+ months: invest 50% of the monthly contribution in core QQQ while selling about 1/12 of TQQQ monthly and keeping a 10% TQQQ floor. This is a shift from leveraged to unleveraged exposure, not contradictory trading.
+- Normal regime: refill the 10% TQQQ floor first, then buy QQQ; drip surplus cash back at roughly 1/6 per month.
 
 The Tactical QQQ and Tactical TQQQ variants reuse the same monthly signal decision but restrict the execution universe:
 
@@ -99,7 +99,7 @@ Historical first-of-month sampling under the old rules had two hard failures:
 
 Defaults now use a live-enough cheap threshold, core-low priority over crash sells, a reachable fast-crash branch before the softer mild-drawdown cue, and intra-month upgrades.
 
-The 50% high-regime QQQ rate is a deliberately simple participation floor, not an optimized parameter. A 191-monthly-start audit found the revised rule finished ahead of the prior cash-heavier rule in 78.5% of starts and reduced the dispersion of excess IRR versus QQQ. The tradeoff is intentional: a new account that starts just before a correction loses more than one left in cash. In the bundled snapshots, the worst recent rolling endpoint was a 2025-01 start ending 2025-04, when the revised rule lagged the prior rule by about 6.5%; the 2023-start maximum drawdown was about 26.2% versus 22.8% for QQQ.
+The 50% high-regime QQQ rate and the standard TQQQ limits are deliberately simple risk controls, not optimized parameters. The standard policy lowers leverage relative to the optional aggressive scenario, but it can still lag QQQ in strong bull markets and lose materially during drawdowns. Treat all historical comparisons as path-dependent evidence rather than a promise of future outperformance.
 
 Use the mixed rule as a tactical contribution and leverage overlay, not as a universal promise to beat QQQ from every start date. Existing holdings still make outcomes path-dependent; a future target-allocation ruleset would be needed to remove that limitation rather than merely reduce it.
 

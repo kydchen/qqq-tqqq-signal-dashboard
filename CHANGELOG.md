@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 - 2026-07-12
+
+Ruleset `2026-07-v6` makes the standard risk policy the mixed strategy's single source of truth.
+
+- Changed the main mixed-strategy backtest from the aggressive profile to the standard profile: 40% TQQQ cap, 10% normal floor, 25% bottom target, and 40% post-bottom target.
+- Kept the 90% aggressive profile as an optional manual-execution scenario instead of presenting it as the default strategy.
+- Aligned strategy-workbench results, sensitivity runs, event recaps, walk-forward checks, API metadata, and bilingual rule copy with the standard profile.
+- Re-ran every supported start window with the versioned local data snapshots and updated regression checks for the revised risk semantics.
+
 ## 0.5.0 - 2026-07-12
 
 Ruleset `2026-07-v5` keeps core QQQ participation alive during long expensive bull markets.
