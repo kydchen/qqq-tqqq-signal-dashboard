@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.7.2 - 2026-07-19
+
+Frontend and data hardening; no strategy or backtest behavior change.
+
+- Execution planner errors now carry stable codes (`RANGE`, `POLICY_UNAVAILABLE`, `TARGETS_EXCEED_CAP`, `QUOTES_UNAVAILABLE`, `COST_CHOICE`, `ACTION_UNAVAILABLE`) and the Chinese messages map codes instead of matching English message prefixes.
+- Unified HTML escaping for API-sourced fields in the events, data-quality, and order-draft views.
+- Removed duplicate render passes: `renderMarket` and `renderBacktest` no longer re-render the execution guides, order draft, or edge card; each section renders exactly once per `renderStatic` pass, and `loadBacktest` refreshes the backtest-derived cards explicitly.
+- Risk-profile notes are generated from the API's `riskPolicies` values instead of hardcoded percentages, with the static copy as fallback before data loads.
+- Snapshot read-side validation: ISO dates, strictly ordered entries (CAPE is newest-first), finite positive values; large daily jumps warn once per process instead of rejecting real market data.
+- `/api/health` now reports `status: "degraded"` (still HTTP 200) when an upstream source is down and snapshot fallback is serving, so upstream outages stay visible to monitoring.
+
+## 0.7.1 - 2026-07-19
+
+Evidence-framing fixes; no strategy or backtest behavior change.
+
+- Renamed the walk-forward panel to a historical threshold-robustness diagnostic and disclosed in both the UI and `modelNotes.walkForward` that default thresholds were informed by historical walk-forward results, that validation windows overlap, and that thresholds are frozen as of 2026-07 (ruleset v6), so genuine forward evidence can only accumulate from the freeze onward.
+- Labeled event-recap cards that contain synthetic TQQQ history, added a synthetic-range caution to the sensitivity grid for pre-inception start dates, and added `modelNotes.syntheticScope` stating which panels include synthetic TQQQ.
+
+## 0.7.0 - 2026-07-19
+
+Ruleset `2026-07-v7` unifies the monthly signal state machine and fixes cross-month carry-in handling.
+
+- Extracted one shared monthly signal machine (`createSignalMachine`/`signalMachineClose`/`signalMachineDue`) now used by the live panel, the monthly decision log, memory replay, and the backtest; the four hand-rolled copies are gone.
+- Signal memory (ramp/heat counters) now advances at decision confirmation in the backtest too; it previously advanced at next-session execution there while the live paths advanced it at decision time.
+- Fixed the cross-month carry-in bug: a decision made on a month's last close still executes on the first session of the next month, but it no longer swallows that new month's own month-start lock. Carry-in executions are recorded on the monthly point as `carryIn` with their original decision and execution dates.
+- Historical impact on versioned snapshots: results are unchanged for 2000 and later starts; 1990/1995 starts change exactly one month (1997-11 now trades both the October carry-in and its own small-dip lock), adding one smallDipBuy and moving signal final value by roughly +0.05%.
+- Rebuilt the state pipeline O(N) with a bit-identical slow reference kept in tests; full-history states and every start/cost action trajectory are asserted equal, and the total test suite runs in about 3 seconds.
+
 ## 0.6.0 - 2026-07-12
 
 Ruleset `2026-07-v6` makes the standard risk policy the mixed strategy's single source of truth.

@@ -27,8 +27,13 @@ module.exports = async function handler(req, res) {
     };
   })];
   const ok = checks.every((item) => item.ok);
+  // Snapshot fallback keeps the app functional, but an upstream outage should
+  // stay visible to monitoring instead of hiding behind a plain 200.
+  const degraded = ok && checks.some((item) => (item.fallbackSources || []).length > 0);
   sendJson(res, ok ? 200 : 503, {
     ok,
+    status: ok ? (degraded ? "degraded" : "ok") : "down",
+    degraded,
     generatedAt: new Date().toISOString(),
     checks,
   }, { cache: false });

@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const CAPE_URL = "https://www.multpl.com/shiller-pe/table/by-month";
 const CACHE_MS = 15 * 60 * 1000;
-const RULESET_ID = "2026-07-v6";
+const RULESET_ID = "2026-07-v7";
 const VALID_STARTS = new Set(["1990-01-01", "1995-01-01", "2000-01-01", "2005-01-01", "2010-01-01", "2010-02-11", "2015-01-01", "2020-01-01", "2023-01-01", "2024-01-01", "2025-01-01"]);
 const VALID_MONTHLY = new Set([1000]);
 const VALID_COST_BPS = new Set([0, 5, 10]);
@@ -313,6 +313,26 @@ async function loadData() {
   };
 }
 
+let snapshotJumpWarned = false;
+
+function validateSnapshotPoints(name, points, { daily = false, order = "asc" } = {}) {
+  let previous = null;
+  for (const point of points) {
+    if (!point || typeof point.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(point.date)) {
+      throw new Error(`${name} snapshot has a malformed date entry`);
+    }
+    if (previous && (order === "asc" ? point.date <= previous.date : point.date >= previous.date)) {
+      throw new Error(`${name} snapshot dates must be strictly ${order === "asc" ? "increasing" : "decreasing"}`);
+    }
+    if (!Number.isFinite(point.value) || point.value <= 0) throw new Error(`${name} snapshot has a non-finite or non-positive value at ${point.date}`);
+    // Large one-day jumps are real in markets; warn loudly instead of rejecting.
+    if (!snapshotJumpWarned && daily && previous && Math.abs(point.value / previous.value - 1) > 0.5) {
+      console.warn(`${name} snapshot jumps ${(100 * (point.value / previous.value - 1)).toFixed(1)}% on ${point.date}`);
+    }
+    previous = point;
+  }
+}
+
 function loadSnapshotData() {
   const data = {
     nasdaq: loadJsonSnapshot("ndx-snapshot.json"),
@@ -327,7 +347,12 @@ function loadSnapshotData() {
   for (const [name, points] of Object.entries(data)) {
     if (name === "staleSources" || name === "sourceMode") continue;
     if (!Array.isArray(points) || points.length < 60) throw new Error(`${name} snapshot is incomplete`);
+    validateSnapshotPoints(name, points, {
+      daily: ["nasdaq", "qqq", "tqqq", "vix"].includes(name),
+      order: name === "capeLatestFirst" ? "desc" : "asc",
+    });
   }
+  snapshotJumpWarned = true;
   return data;
 }
 
@@ -626,6 +651,68 @@ function memoryAfterAction(memory, decision) {
   return memory;
 }
 
+// Unified monthly signal machine shared by the live panel, the monthly
+// decision log, memory replay, and the backtest. These are shared
+// state-transition functions, not pure functions: each one mutates the
+// passed-in machine object. Event order per session:
+//
+//   open:  month-start contribution, then signalMachineDue releases the
+//          pending order from the previous close (even when that close
+//          belonged to the previous month)
+//   close: signalMachineClose advances month state, locks or upgrades the
+//          month's action, and schedules execution for the next session
+//
+// Signal memory advances when a decision is confirmed at a close; portfolio
+// trades execute at the next session. A carry-in order from last month never
+// swallows the new month's own month-start lock.
+function createSignalMachine(thresholds = DEFAULT_THRESHOLDS) {
+  return {
+    thresholds,
+    memory: { heatMonths: 0, rampMonths: 0, month: "" },
+    month: "",
+    monthAction: null,
+    lockedDecision: null,
+    upgraded: false,
+    pending: null,
+  };
+}
+
+function signalMachineClose(machine, state, date) {
+  const month = date.slice(0, 7);
+  if (month !== machine.month) {
+    machine.month = month;
+    machine.monthAction = null;
+    machine.lockedDecision = null;
+    machine.upgraded = false;
+  }
+  machine.memory = advanceSignalMonth(machine.memory, state, month, machine.thresholds);
+  const decision = calculateDecision(state, machine.memory, machine.thresholds);
+  if (machine.monthAction == null) {
+    machine.monthAction = decision.key;
+    machine.lockedDecision = decision;
+    machine.memory = memoryAfterAction(machine.memory, decision);
+    machine.pending = { decision, decisionDate: date, month };
+    return machine.pending;
+  }
+  if (shouldUpgradeMonthAction(machine.monthAction, decision.key)) {
+    machine.monthAction = decision.key;
+    machine.upgraded = true;
+    machine.memory = memoryAfterAction(machine.memory, decision);
+    machine.pending = { decision, decisionDate: date, month };
+    return machine.pending;
+  }
+  return null;
+}
+
+function signalMachineDue(machine, date) {
+  if (machine.pending && machine.pending.decisionDate < date) {
+    const due = machine.pending;
+    machine.pending = null;
+    return due;
+  }
+  return null;
+}
+
 function coverageForSeries(points) {
   return {
     start: points?.[0]?.date || null,
@@ -658,61 +745,35 @@ function buildDataQuality(data, prices = []) {
 }
 
 function buildMonthlyDecisionLog(prices, nasdaq, vix, capeChrono, states, thresholds = DEFAULT_THRESHOLDS, limit = 18) {
-  let memory = { heatMonths: 0, rampMonths: 0, month: "" };
+  const machine = createSignalMachine(thresholds);
   let lastMonth = "";
-  let monthAction = null;
   let monthAnchorDate = null;
-  let monthAnchorDecision = null;
-  let upgraded = false;
   const months = [];
-
-  for (let i = 30; i < prices.length; i += 1) {
-    const price = prices[i];
-    const month = price.date.slice(0, 7);
-    const state = states?.[i];
-    if (!state) continue;
-
-    if (month !== lastMonth) {
-      if (lastMonth && monthAction) {
-        months.push({
-          month: lastMonth,
-          date: monthAnchorDate,
-          key: monthAction,
-          lockedKey: monthAnchorDecision?.key || monthAction,
-          upgraded,
-          lowSignalCount: monthAnchorDecision?.lowSignalCount ?? null,
-        });
-      }
-      lastMonth = month;
-      monthAction = null;
-      monthAnchorDate = price.date;
-      monthAnchorDecision = null;
-      upgraded = false;
-      memory = advanceSignalMonth(memory, state, month, thresholds);
-      const decision = calculateDecision(state, memory, thresholds);
-      monthAnchorDecision = decision;
-      monthAction = decision.key;
-      memory = memoryAfterAction(memory, decision);
-    } else {
-      memory = advanceSignalMonth(memory, state, month, thresholds);
-      const live = calculateDecision(state, memory, thresholds);
-      if (shouldUpgradeMonthAction(monthAction, live.key)) {
-        monthAction = live.key;
-        upgraded = true;
-        memory = memoryAfterAction(memory, live);
-      }
-    }
-  }
-  if (lastMonth && monthAction) {
+  const pushMonth = () => {
+    if (!lastMonth || !machine.monthAction) return;
     months.push({
       month: lastMonth,
       date: monthAnchorDate,
-      key: monthAction,
-      lockedKey: monthAnchorDecision?.key || monthAction,
-      upgraded,
-      lowSignalCount: monthAnchorDecision?.lowSignalCount ?? null,
+      key: machine.monthAction,
+      lockedKey: machine.lockedDecision?.key || machine.monthAction,
+      upgraded: machine.upgraded,
+      lowSignalCount: machine.lockedDecision?.lowSignalCount ?? null,
     });
+  };
+
+  for (let i = 30; i < prices.length; i += 1) {
+    const price = prices[i];
+    const state = states?.[i];
+    if (!state) continue;
+    const month = price.date.slice(0, 7);
+    if (month !== lastMonth) {
+      pushMonth();
+      lastMonth = month;
+      monthAnchorDate = price.date;
+    }
+    signalMachineClose(machine, state, price.date);
   }
+  pushMonth();
   return months.slice(-limit);
 }
 
@@ -756,28 +817,20 @@ async function marketSnapshot() {
   const memoryBeforeMonth = replayDecisionMemory(prices, nasdaq, vix, capeChrono, currentMonth, DEFAULT_THRESHOLDS, states);
   const monthStartState = states[monthStartIndex] || states.at(-1);
   const monthStartMemory = advanceSignalMonth(memoryBeforeMonth, monthStartState, currentMonth, DEFAULT_THRESHOLDS);
-  const lockedDecision = calculateDecision(monthStartState, monthStartMemory, DEFAULT_THRESHOLDS);
   const currentState = states.at(-1);
-  // Replay through current month with upgrades so live memory matches engine path.
-  let liveMemory = { ...monthStartMemory };
-  let effectiveKey = lockedDecision.key;
-  let upgraded = false;
+  // Replay the current month through the shared machine so live memory,
+  // the locked month-start action, and intra-month upgrades match the engine.
+  const machine = createSignalMachine(DEFAULT_THRESHOLDS);
+  machine.memory = memoryBeforeMonth;
   for (let i = monthStartIndex; i < prices.length; i += 1) {
     const state = states[i];
     if (!state) continue;
-    liveMemory = advanceSignalMonth(liveMemory, state, currentMonth, DEFAULT_THRESHOLDS);
-    const live = calculateDecision(state, liveMemory, DEFAULT_THRESHOLDS);
-    if (i === monthStartIndex) {
-      effectiveKey = live.key;
-      liveMemory = memoryAfterAction(liveMemory, live);
-      continue;
-    }
-    if (shouldUpgradeMonthAction(effectiveKey, live.key)) {
-      effectiveKey = live.key;
-      upgraded = true;
-      liveMemory = memoryAfterAction(liveMemory, live);
-    }
+    signalMachineClose(machine, state, prices[i].date);
   }
+  const lockedDecision = machine.lockedDecision || calculateDecision(monthStartState, monthStartMemory, DEFAULT_THRESHOLDS);
+  const liveMemory = machine.memory;
+  const effectiveKey = machine.monthAction || lockedDecision.key;
+  const upgraded = machine.upgraded;
   const liveDecision = calculateDecision(currentState, liveMemory, DEFAULT_THRESHOLDS);
   const decision = {
     ...liveDecision,
@@ -1079,6 +1132,7 @@ function record(portfolio, prices, startTime, actionKey = null, qqqPrice = null,
     actionKey,
     actionDecisionDate: actionMeta.decisionDate || null,
     actionExecutionDate: actionMeta.executionDate || null,
+    carryIn: actionMeta.carryIn || null,
   });
 }
 
@@ -1153,6 +1207,9 @@ function riskStats(points) {
   return { sharpe, ulcer, sharpeType: "monthlyExcessReturnOverCash" };
 }
 
+// Reference per-day state computation. Kept as the slow, obviously-correct
+// implementation: test/state-consistency.test.cjs compares the O(N) buildStates
+// output against this function over the full history, day by day.
 function stateAt(index, prices, nasdaq, vixByDate, capeChrono, capeCursor) {
   const current5 = mean(nasdaq.slice(Math.max(0, index - 4), index + 1).map((point) => point.value));
   const previous5 = mean(nasdaq.slice(Math.max(0, index - 29), Math.max(1, index - 24)).map((point) => point.value));
@@ -1174,36 +1231,80 @@ function stateAt(index, prices, nasdaq, vixByDate, capeChrono, capeCursor) {
   return { capePercentile, drawdownPct, crash25dPct, vix, vixAvailable };
 }
 
+// O(N) state builder. Produces exactly the same per-day states as calling the
+// reference stateAt for every day: the same slice bounds and summation order
+// are kept, the rolling high uses a monotonic deque (max is order-independent),
+// the VIX 5-day average uses a forward cursor (dates are sorted), and the CAPE
+// percentile is memoized per month because the CAPE cursor only moves monthly.
 function buildStates(prices, nasdaq, vix, capeChrono) {
-  const capeCursor = { index: 0 };
-  return prices.map((price, index) => (index < 30 ? null : stateAt(index, price, nasdaq, vix, capeChrono, capeCursor)));
+  const count = prices.length;
+  const states = new Array(count).fill(null);
+  if (count <= 30) return states;
+
+  const avg5 = new Array(count);
+  const prev5 = new Array(count);
+  for (let i = 0; i < count; i += 1) {
+    const start = Math.max(0, i - 4);
+    let sum = 0;
+    for (let j = start; j <= i; j += 1) sum += nasdaq[j].value;
+    avg5[i] = sum / (i - start + 1);
+    const prevStart = Math.max(0, i - 29);
+    const prevEnd = Math.max(1, i - 24); // slice end, exclusive
+    let prevSum = 0;
+    for (let j = prevStart; j < prevEnd; j += 1) prevSum += nasdaq[j].value;
+    prev5[i] = prevSum / (prevEnd - prevStart);
+  }
+
+  const rollingHigh = new Array(count);
+  const deque = []; // indices into avg5 with decreasing values
+  let head = 0;
+  for (let i = 0; i < count; i += 1) {
+    while (deque.length > head && deque[head] < i - ROLLING_HIGH_DAYS) head += 1;
+    while (deque.length > head && avg5[deque[deque.length - 1]] <= avg5[i]) deque.pop();
+    deque.push(i);
+    rollingHigh[i] = avg5[deque[head]];
+  }
+
+  let vixIndex = -1;
+  let capeIndex = 0;
+  let computedCapeIndex = -1;
+  let capePercentile = NaN;
+  for (let i = 30; i < count; i += 1) {
+    const date = prices[i].date;
+    while (vixIndex + 1 < vix.length && vix[vixIndex + 1].date <= date) vixIndex += 1;
+    while (capeIndex + 1 < capeChrono.length && capeChrono[capeIndex + 1].date <= date) capeIndex += 1;
+    if (computedCapeIndex !== capeIndex) {
+      capePercentile = capePercentileAt(capeChrono, capeIndex);
+      computedCapeIndex = capeIndex;
+    }
+    const current5 = avg5[i];
+    const previous5 = prev5[i];
+    const drawdownPct = 100 * (current5 / rollingHigh[i] - 1);
+    const crash25dPct = previous5 ? 100 * (current5 / previous5 - 1) : 0;
+    const vixAvailable = vixIndex >= 0;
+    let vixAvg = 20;
+    if (vixAvailable) {
+      const vixStart = Math.max(0, vixIndex - 4);
+      let vixSum = 0;
+      for (let j = vixStart; j <= vixIndex; j += 1) vixSum += vix[j].value;
+      vixAvg = vixSum / (vixIndex - vixStart + 1);
+    }
+    states[i] = { capePercentile, drawdownPct, crash25dPct, vix: vixAvg, vixAvailable };
+  }
+  return states;
 }
 
 function replayDecisionMemory(prices, nasdaq, vix, capeChrono, beforeMonth, thresholds = DEFAULT_THRESHOLDS, states = null) {
-  let memory = { heatMonths: 0, rampMonths: 0, month: "" };
+  const machine = createSignalMachine(thresholds);
   const capeCursor = { index: 0 };
-  let lastMonth = "";
-  let monthAction = null;
   for (let i = 30; i < prices.length; i += 1) {
     const price = prices[i];
     const month = price.date.slice(0, 7);
     if (month >= beforeMonth) break;
-    if (month !== lastMonth) {
-      lastMonth = month;
-      monthAction = null;
-    }
     const state = states?.[i] || stateAt(i, price, nasdaq, vix, capeChrono, capeCursor);
-    memory = advanceSignalMonth(memory, state, month, thresholds);
-    const decision = calculateDecision(state, memory, thresholds);
-    if (monthAction == null) {
-      monthAction = decision.key;
-      memory = memoryAfterAction(memory, decision);
-    } else if (shouldUpgradeMonthAction(monthAction, decision.key)) {
-      monthAction = decision.key;
-      memory = memoryAfterAction(memory, decision);
-    }
+    signalMachineClose(machine, state, price.date);
   }
-  return memory;
+  return machine.memory;
 }
 
 function enforceTqqqCap(portfolio, prices, maxTqqq) {
@@ -1536,13 +1637,12 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
   };
   let lastMonth = "";
   let startTime = null;
-  let signalMemory = { heatMonths: 0, rampMonths: 0, month: "" };
+  const machine = createSignalMachine(thresholds);
   const capeCursor = { index: 0 };
-  let executedThisMonth = false;
   let monthAction = null;
   let monthDecisionDate = null;
   let monthExecutionDate = null;
-  let pendingAction = null;
+  let carryInAction = null;
   let previousPrice = null;
   let lastSignalRecordedValue = null;
   const actionStats = emptyActionStats();
@@ -1561,6 +1661,7 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
       record(portfolio, previousPrice, startTime, key.startsWith("signal") ? monthAction : null, qqqPrice, {
         decisionDate: monthDecisionDate,
         executionDate: monthExecutionDate,
+        carryIn: carryInAction,
       });
     }
   };
@@ -1577,10 +1678,10 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
     if (month !== lastMonth) {
       recordMonth();
       lastMonth = month;
-      executedThisMonth = false;
       monthAction = null;
       monthDecisionDate = null;
       monthExecutionDate = null;
+      carryInAction = null;
 
       for (const portfolio of Object.values(portfolios)) {
         addContribution(portfolio, monthlyAmount, price);
@@ -1592,32 +1693,30 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
       buyTQQQ(portfolios.blend8020, portfolios.blend8020.cash, price.tqqq);
     }
 
-    if (pendingAction && pendingAction.decisionDate < price.date) {
-      const priorAction = monthAction;
-      applySignalAction(portfolios.signal, pendingAction.decision, price, monthlyAmount);
-      applySignalQqqAction(portfolios.signalQqq, pendingAction.decision, price, monthlyAmount);
-      applySignalTqqqAction(portfolios.signalTqqq, pendingAction.decision, price, monthlyAmount);
-      signalMemory = memoryAfterAction(signalMemory, pendingAction.decision);
-      if (priorAction && priorAction !== pendingAction.decision.key && actionStats[priorAction]) {
-        actionStats[priorAction].count = Math.max(0, actionStats[priorAction].count - 1);
+    // Execute the order scheduled by the previous close. An order carried in
+    // from last month trades as usual but is recorded as a carry-in: it never
+    // swallows this month's own month-start lock at today's close.
+    const due = signalMachineDue(machine, price.date);
+    if (due) {
+      applySignalAction(portfolios.signal, due.decision, price, monthlyAmount);
+      applySignalQqqAction(portfolios.signalQqq, due.decision, price, monthlyAmount);
+      applySignalTqqqAction(portfolios.signalTqqq, due.decision, price, monthlyAmount);
+      actionStats[due.decision.key].count += 1;
+      if (due.month === month) {
+        const priorAction = monthAction;
+        if (priorAction && priorAction !== due.decision.key && actionStats[priorAction]) {
+          actionStats[priorAction].count = Math.max(0, actionStats[priorAction].count - 1);
+        }
+        monthAction = due.decision.key;
+        monthDecisionDate = due.decisionDate;
+        monthExecutionDate = price.date;
+      } else {
+        carryInAction = { actionKey: due.decision.key, decisionDate: due.decisionDate, executionDate: price.date };
       }
-      monthAction = pendingAction.decision.key;
-      monthDecisionDate = pendingAction.decisionDate;
-      monthExecutionDate = price.date;
-      actionStats[monthAction].count += 1;
-      executedThisMonth = true;
-      pendingAction = null;
     }
 
     const state = states?.[i] || stateAt(i, price, nasdaq, vix, capeChrono, capeCursor);
-    signalMemory = advanceSignalMonth(signalMemory, state, month, thresholds);
-    const decision = calculateDecision(state, signalMemory, thresholds);
-    if (!executedThisMonth && !pendingAction) {
-      pendingAction = { decision, decisionDate: price.date, month };
-    } else if (shouldUpgradeMonthAction(monthAction, decision.key)) {
-      // Signal is known after this close; the upgraded manual order executes next session.
-      pendingAction = { decision, decisionDate: price.date, month };
-    }
+    signalMachineClose(machine, state, price.date);
 
     for (const portfolio of Object.values(portfolios)) {
       updateDrawdown(portfolio, price);
@@ -1756,6 +1855,10 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
       wrappers: "Tactical QQQ and tactical TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash.",
       sharpe: "Sharpe uses monthly unit-NAV excess returns over the modeled cash rate, annualized by sqrt(12).",
       evidence: `The headline excludes synthetic TQQQ history and starts at ${evidenceStart}. The allocation-matched benchmark is an ex-post diagnostic rebalanced monthly to the signal strategy's average cash, QQQ, and TQQQ weights; it is not an investable pre-registered rule.`,
+      walkForward: "The walk-forward panel is a historical threshold-robustness diagnostic, not independent out-of-sample evidence: the default thresholds were informed by historical walk-forward results, the validation windows overlap each other, and thresholds are frozen as of 2026-07 (ruleset v6). Genuine forward evidence can only accumulate from the freeze onward.",
+      syntheticScope: startDate < actualTqqqStart
+        ? `This start date includes synthetic pre-inception TQQQ history: event recaps, the sensitivity grid, and the full-sample strategy lines all contain synthetic TQQQ before ${actualTqqqStart}. Only the headline evidence excludes synthetic history.`
+        : "This start date uses actual TQQQ history only; no synthetic TQQQ enters any panel.",
       rareActions: `Fast-crash defense executed ${signalEvidence?.actionCounts?.crashDefense || 0} times in the headline sample. Treat it as a mechanical guardrail, not a statistically validated source of protection.`,
       limits: "The 50% high-regime QQQ rate and standard TQQQ limits are design choices, not optimized parameters. The standard policy reduces leverage relative to the optional aggressive profile, but it can still lag QQQ in strong bull markets and lose materially in drawdowns. No taxes, no residual tracking error after inception, and no broker constraints. Attribution is path-linked, not causal. Past edge versus QQQ DCA is not a guarantee of future edge.",
       notAdvice: "This dashboard is a research and process tool, not investment advice.",
@@ -1769,7 +1872,13 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
 
 module.exports = {
   backtest,
+  buildPrices,
+  buildStates,
+  stateAt,
   calculateDecision,
+  createSignalMachine,
+  signalMachineClose,
+  signalMachineDue,
   decisionConfidence,
   CORE_QQQ_HIGH_REGIME_FRACTION,
   MAIN_SIGNAL_POLICY_KEY,

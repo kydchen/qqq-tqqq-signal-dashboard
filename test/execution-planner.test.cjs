@@ -65,6 +65,10 @@ test("invalid account values fail loudly", () => {
   assert.throws(() => plan({
     account: { cash: -1, qqqShares: 0, tqqqShares: 0, monthlyContribution: 1000, fractionalShares: true },
   }), /Cash must be between/);
+  assert.throws(
+    () => plan({ account: { cash: -1, qqqShares: 0, tqqqShares: 0, monthlyContribution: 1000, fractionalShares: true } }),
+    (error) => error.code === "RANGE" && error.field === "Cash",
+  );
 });
 
 test("invalid risk policy and trading cost fail loudly", () => {
@@ -72,6 +76,11 @@ test("invalid risk policy and trading cost fail loudly", () => {
     policy: { ...policies.standard, normalTqqqFloor: 0.5 },
   }), /cannot exceed/);
   assert.throws(() => plan({ costBps: 7 }), /must be 0, 5, or 10/);
+  assert.throws(
+    () => plan({ policy: { ...policies.standard, normalTqqqFloor: 0.5 } }),
+    (error) => error.code === "TARGETS_EXCEED_CAP",
+  );
+  assert.throws(() => plan({ costBps: 7 }), (error) => error.code === "COST_CHOICE");
 });
 
 test("ramp rotation cannot spend cash outside the staged budget", () => {
