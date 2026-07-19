@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const CAPE_URL = "https://www.multpl.com/shiller-pe/table/by-month";
 const CACHE_MS = 15 * 60 * 1000;
-const RULESET_ID = "2026-07-v6";
+const RULESET_ID = "2026-07-v7";
 const VALID_STARTS = new Set(["1990-01-01", "1995-01-01", "2000-01-01", "2005-01-01", "2010-01-01", "2010-02-11", "2015-01-01", "2020-01-01", "2023-01-01", "2024-01-01", "2025-01-01"]);
 const VALID_MONTHLY = new Set([1000]);
 const VALID_COST_BPS = new Set([0, 5, 10]);
@@ -626,6 +626,66 @@ function memoryAfterAction(memory, decision) {
   return memory;
 }
 
+// Unified monthly signal machine shared by the live panel, the monthly
+// decision log, memory replay, and the backtest. Event order per session:
+//
+//   open:  month-start contribution, then signalMachineDue releases the
+//          pending order from the previous close (even when that close
+//          belonged to the previous month)
+//   close: signalMachineClose advances month state, locks or upgrades the
+//          month's action, and schedules execution for the next session
+//
+// Signal memory advances when a decision is confirmed at a close; portfolio
+// trades execute at the next session. A carry-in order from last month never
+// swallows the new month's own month-start lock.
+function createSignalMachine(thresholds = DEFAULT_THRESHOLDS) {
+  return {
+    thresholds,
+    memory: { heatMonths: 0, rampMonths: 0, month: "" },
+    month: "",
+    monthAction: null,
+    lockedDecision: null,
+    upgraded: false,
+    pending: null,
+  };
+}
+
+function signalMachineClose(machine, state, date) {
+  const month = date.slice(0, 7);
+  if (month !== machine.month) {
+    machine.month = month;
+    machine.monthAction = null;
+    machine.lockedDecision = null;
+    machine.upgraded = false;
+  }
+  machine.memory = advanceSignalMonth(machine.memory, state, month, machine.thresholds);
+  const decision = calculateDecision(state, machine.memory, machine.thresholds);
+  if (machine.monthAction == null) {
+    machine.monthAction = decision.key;
+    machine.lockedDecision = decision;
+    machine.memory = memoryAfterAction(machine.memory, decision);
+    machine.pending = { decision, decisionDate: date, month };
+    return machine.pending;
+  }
+  if (shouldUpgradeMonthAction(machine.monthAction, decision.key)) {
+    machine.monthAction = decision.key;
+    machine.upgraded = true;
+    machine.memory = memoryAfterAction(machine.memory, decision);
+    machine.pending = { decision, decisionDate: date, month };
+    return machine.pending;
+  }
+  return null;
+}
+
+function signalMachineDue(machine, date) {
+  if (machine.pending && machine.pending.decisionDate < date) {
+    const due = machine.pending;
+    machine.pending = null;
+    return due;
+  }
+  return null;
+}
+
 function coverageForSeries(points) {
   return {
     start: points?.[0]?.date || null,
@@ -658,61 +718,35 @@ function buildDataQuality(data, prices = []) {
 }
 
 function buildMonthlyDecisionLog(prices, nasdaq, vix, capeChrono, states, thresholds = DEFAULT_THRESHOLDS, limit = 18) {
-  let memory = { heatMonths: 0, rampMonths: 0, month: "" };
+  const machine = createSignalMachine(thresholds);
   let lastMonth = "";
-  let monthAction = null;
   let monthAnchorDate = null;
-  let monthAnchorDecision = null;
-  let upgraded = false;
   const months = [];
-
-  for (let i = 30; i < prices.length; i += 1) {
-    const price = prices[i];
-    const month = price.date.slice(0, 7);
-    const state = states?.[i];
-    if (!state) continue;
-
-    if (month !== lastMonth) {
-      if (lastMonth && monthAction) {
-        months.push({
-          month: lastMonth,
-          date: monthAnchorDate,
-          key: monthAction,
-          lockedKey: monthAnchorDecision?.key || monthAction,
-          upgraded,
-          lowSignalCount: monthAnchorDecision?.lowSignalCount ?? null,
-        });
-      }
-      lastMonth = month;
-      monthAction = null;
-      monthAnchorDate = price.date;
-      monthAnchorDecision = null;
-      upgraded = false;
-      memory = advanceSignalMonth(memory, state, month, thresholds);
-      const decision = calculateDecision(state, memory, thresholds);
-      monthAnchorDecision = decision;
-      monthAction = decision.key;
-      memory = memoryAfterAction(memory, decision);
-    } else {
-      memory = advanceSignalMonth(memory, state, month, thresholds);
-      const live = calculateDecision(state, memory, thresholds);
-      if (shouldUpgradeMonthAction(monthAction, live.key)) {
-        monthAction = live.key;
-        upgraded = true;
-        memory = memoryAfterAction(memory, live);
-      }
-    }
-  }
-  if (lastMonth && monthAction) {
+  const pushMonth = () => {
+    if (!lastMonth || !machine.monthAction) return;
     months.push({
       month: lastMonth,
       date: monthAnchorDate,
-      key: monthAction,
-      lockedKey: monthAnchorDecision?.key || monthAction,
-      upgraded,
-      lowSignalCount: monthAnchorDecision?.lowSignalCount ?? null,
+      key: machine.monthAction,
+      lockedKey: machine.lockedDecision?.key || machine.monthAction,
+      upgraded: machine.upgraded,
+      lowSignalCount: machine.lockedDecision?.lowSignalCount ?? null,
     });
+  };
+
+  for (let i = 30; i < prices.length; i += 1) {
+    const price = prices[i];
+    const state = states?.[i];
+    if (!state) continue;
+    const month = price.date.slice(0, 7);
+    if (month !== lastMonth) {
+      pushMonth();
+      lastMonth = month;
+      monthAnchorDate = price.date;
+    }
+    signalMachineClose(machine, state, price.date);
   }
+  pushMonth();
   return months.slice(-limit);
 }
 
@@ -756,28 +790,20 @@ async function marketSnapshot() {
   const memoryBeforeMonth = replayDecisionMemory(prices, nasdaq, vix, capeChrono, currentMonth, DEFAULT_THRESHOLDS, states);
   const monthStartState = states[monthStartIndex] || states.at(-1);
   const monthStartMemory = advanceSignalMonth(memoryBeforeMonth, monthStartState, currentMonth, DEFAULT_THRESHOLDS);
-  const lockedDecision = calculateDecision(monthStartState, monthStartMemory, DEFAULT_THRESHOLDS);
   const currentState = states.at(-1);
-  // Replay through current month with upgrades so live memory matches engine path.
-  let liveMemory = { ...monthStartMemory };
-  let effectiveKey = lockedDecision.key;
-  let upgraded = false;
+  // Replay the current month through the shared machine so live memory,
+  // the locked month-start action, and intra-month upgrades match the engine.
+  const machine = createSignalMachine(DEFAULT_THRESHOLDS);
+  machine.memory = memoryBeforeMonth;
   for (let i = monthStartIndex; i < prices.length; i += 1) {
     const state = states[i];
     if (!state) continue;
-    liveMemory = advanceSignalMonth(liveMemory, state, currentMonth, DEFAULT_THRESHOLDS);
-    const live = calculateDecision(state, liveMemory, DEFAULT_THRESHOLDS);
-    if (i === monthStartIndex) {
-      effectiveKey = live.key;
-      liveMemory = memoryAfterAction(liveMemory, live);
-      continue;
-    }
-    if (shouldUpgradeMonthAction(effectiveKey, live.key)) {
-      effectiveKey = live.key;
-      upgraded = true;
-      liveMemory = memoryAfterAction(liveMemory, live);
-    }
+    signalMachineClose(machine, state, prices[i].date);
   }
+  const lockedDecision = machine.lockedDecision || calculateDecision(monthStartState, monthStartMemory, DEFAULT_THRESHOLDS);
+  const liveMemory = machine.memory;
+  const effectiveKey = machine.monthAction || lockedDecision.key;
+  const upgraded = machine.upgraded;
   const liveDecision = calculateDecision(currentState, liveMemory, DEFAULT_THRESHOLDS);
   const decision = {
     ...liveDecision,
@@ -1079,6 +1105,7 @@ function record(portfolio, prices, startTime, actionKey = null, qqqPrice = null,
     actionKey,
     actionDecisionDate: actionMeta.decisionDate || null,
     actionExecutionDate: actionMeta.executionDate || null,
+    carryIn: actionMeta.carryIn || null,
   });
 }
 
@@ -1241,30 +1268,16 @@ function buildStates(prices, nasdaq, vix, capeChrono) {
 }
 
 function replayDecisionMemory(prices, nasdaq, vix, capeChrono, beforeMonth, thresholds = DEFAULT_THRESHOLDS, states = null) {
-  let memory = { heatMonths: 0, rampMonths: 0, month: "" };
+  const machine = createSignalMachine(thresholds);
   const capeCursor = { index: 0 };
-  let lastMonth = "";
-  let monthAction = null;
   for (let i = 30; i < prices.length; i += 1) {
     const price = prices[i];
     const month = price.date.slice(0, 7);
     if (month >= beforeMonth) break;
-    if (month !== lastMonth) {
-      lastMonth = month;
-      monthAction = null;
-    }
     const state = states?.[i] || stateAt(i, price, nasdaq, vix, capeChrono, capeCursor);
-    memory = advanceSignalMonth(memory, state, month, thresholds);
-    const decision = calculateDecision(state, memory, thresholds);
-    if (monthAction == null) {
-      monthAction = decision.key;
-      memory = memoryAfterAction(memory, decision);
-    } else if (shouldUpgradeMonthAction(monthAction, decision.key)) {
-      monthAction = decision.key;
-      memory = memoryAfterAction(memory, decision);
-    }
+    signalMachineClose(machine, state, price.date);
   }
-  return memory;
+  return machine.memory;
 }
 
 function enforceTqqqCap(portfolio, prices, maxTqqq) {
@@ -1597,13 +1610,12 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
   };
   let lastMonth = "";
   let startTime = null;
-  let signalMemory = { heatMonths: 0, rampMonths: 0, month: "" };
+  const machine = createSignalMachine(thresholds);
   const capeCursor = { index: 0 };
-  let executedThisMonth = false;
   let monthAction = null;
   let monthDecisionDate = null;
   let monthExecutionDate = null;
-  let pendingAction = null;
+  let carryInAction = null;
   let previousPrice = null;
   let lastSignalRecordedValue = null;
   const actionStats = emptyActionStats();
@@ -1622,6 +1634,7 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
       record(portfolio, previousPrice, startTime, key.startsWith("signal") ? monthAction : null, qqqPrice, {
         decisionDate: monthDecisionDate,
         executionDate: monthExecutionDate,
+        carryIn: carryInAction,
       });
     }
   };
@@ -1638,10 +1651,10 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
     if (month !== lastMonth) {
       recordMonth();
       lastMonth = month;
-      executedThisMonth = false;
       monthAction = null;
       monthDecisionDate = null;
       monthExecutionDate = null;
+      carryInAction = null;
 
       for (const portfolio of Object.values(portfolios)) {
         addContribution(portfolio, monthlyAmount, price);
@@ -1653,32 +1666,30 @@ function runBacktest(data, startDate, monthlyAmount, thresholds = DEFAULT_THRESH
       buyTQQQ(portfolios.blend8020, portfolios.blend8020.cash, price.tqqq);
     }
 
-    if (pendingAction && pendingAction.decisionDate < price.date) {
-      const priorAction = monthAction;
-      applySignalAction(portfolios.signal, pendingAction.decision, price, monthlyAmount);
-      applySignalQqqAction(portfolios.signalQqq, pendingAction.decision, price, monthlyAmount);
-      applySignalTqqqAction(portfolios.signalTqqq, pendingAction.decision, price, monthlyAmount);
-      signalMemory = memoryAfterAction(signalMemory, pendingAction.decision);
-      if (priorAction && priorAction !== pendingAction.decision.key && actionStats[priorAction]) {
-        actionStats[priorAction].count = Math.max(0, actionStats[priorAction].count - 1);
+    // Execute the order scheduled by the previous close. An order carried in
+    // from last month trades as usual but is recorded as a carry-in: it never
+    // swallows this month's own month-start lock at today's close.
+    const due = signalMachineDue(machine, price.date);
+    if (due) {
+      applySignalAction(portfolios.signal, due.decision, price, monthlyAmount);
+      applySignalQqqAction(portfolios.signalQqq, due.decision, price, monthlyAmount);
+      applySignalTqqqAction(portfolios.signalTqqq, due.decision, price, monthlyAmount);
+      actionStats[due.decision.key].count += 1;
+      if (due.month === month) {
+        const priorAction = monthAction;
+        if (priorAction && priorAction !== due.decision.key && actionStats[priorAction]) {
+          actionStats[priorAction].count = Math.max(0, actionStats[priorAction].count - 1);
+        }
+        monthAction = due.decision.key;
+        monthDecisionDate = due.decisionDate;
+        monthExecutionDate = price.date;
+      } else {
+        carryInAction = { actionKey: due.decision.key, decisionDate: due.decisionDate, executionDate: price.date };
       }
-      monthAction = pendingAction.decision.key;
-      monthDecisionDate = pendingAction.decisionDate;
-      monthExecutionDate = price.date;
-      actionStats[monthAction].count += 1;
-      executedThisMonth = true;
-      pendingAction = null;
     }
 
     const state = states?.[i] || stateAt(i, price, nasdaq, vix, capeChrono, capeCursor);
-    signalMemory = advanceSignalMonth(signalMemory, state, month, thresholds);
-    const decision = calculateDecision(state, signalMemory, thresholds);
-    if (!executedThisMonth && !pendingAction) {
-      pendingAction = { decision, decisionDate: price.date, month };
-    } else if (shouldUpgradeMonthAction(monthAction, decision.key)) {
-      // Signal is known after this close; the upgraded manual order executes next session.
-      pendingAction = { decision, decisionDate: price.date, month };
-    }
+    signalMachineClose(machine, state, price.date);
 
     for (const portfolio of Object.values(portfolios)) {
       updateDrawdown(portfolio, price);
@@ -1834,6 +1845,9 @@ module.exports = {
   buildStates,
   stateAt,
   calculateDecision,
+  createSignalMachine,
+  signalMachineClose,
+  signalMachineDue,
   decisionConfidence,
   CORE_QQQ_HIGH_REGIME_FRACTION,
   MAIN_SIGNAL_POLICY_KEY,

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0 - 2026-07-19
+
+Ruleset `2026-07-v7` unifies the monthly signal state machine and fixes cross-month carry-in handling.
+
+- Extracted one shared monthly signal machine (`createSignalMachine`/`signalMachineClose`/`signalMachineDue`) now used by the live panel, the monthly decision log, memory replay, and the backtest; the four hand-rolled copies are gone.
+- Signal memory (ramp/heat counters) now advances at decision confirmation in the backtest too; it previously advanced at next-session execution there while the live paths advanced it at decision time.
+- Fixed the cross-month carry-in bug: a decision made on a month's last close still executes on the first session of the next month, but it no longer swallows that new month's own month-start lock. Carry-in executions are recorded on the monthly point as `carryIn` with their original decision and execution dates.
+- Historical impact on versioned snapshots: results are unchanged for 2000 and later starts; 1990/1995 starts change exactly one month (1997-11 now trades both the October carry-in and its own small-dip lock), adding one smallDipBuy and moving signal final value by roughly +0.05%.
+- Rebuilt the state pipeline O(N) with a bit-identical slow reference kept in tests; full-history states and every start/cost action trajectory are asserted equal, and the total test suite runs in about 3 seconds.
+
 ## 0.6.0 - 2026-07-12
 
 Ruleset `2026-07-v6` makes the standard risk policy the mixed strategy's single source of truth.

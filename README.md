@@ -26,7 +26,7 @@ Account inputs and journal entries stay in browser `localStorage`. They are neve
 
 ## Trust contract
 
-- Ruleset: `2026-07-v6`.
+- Ruleset: `2026-07-v7`.
 - A signal observed at a daily close executes at the next trading session; the backtest never trades at the same close that generated the signal.
 - Backtests use bundled, versioned snapshots instead of live upstream requests, so the same commit reproduces the same result.
 - The default view starts on TQQQ's first actual-history date, 2010-02-11. Earlier audit windows remain available, and their headline evidence excludes synthetic TQQQ history.
@@ -65,6 +65,8 @@ Execution:
 - Monthly cash is contributed on the first trading day.
 - Intra-month upgrades can raise the action to small-dip buy, bottom attack, or crash defense if conditions worsen after the open.
 - The action executes at the next trading session in backtests and appears as a manual next-session draft in the cockpit.
+- A decision made on a month's last close executes as a carry-in on the first session of the next month and is recorded on that month's point as `carryIn`; it never replaces the new month's own month-start action.
+- Signal memory (post-bottom ramp and heat-month counters) advances when a decision is confirmed at a close, while the portfolio trade executes at the next session.
 - Quiet VIX alone no longer forces pause or heat trim.
 
 Risk policies reuse these same signals:

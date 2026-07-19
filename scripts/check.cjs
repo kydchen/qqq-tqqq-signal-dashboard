@@ -84,10 +84,14 @@ function assertBacktestResult(result, start) {
   for (const key of ["signal", "signalQqq", "signalTqqq"]) {
     const strategy = strategies[key];
     const actionCount = Object.values(strategy.actionCounts).reduce((sum, count) => sum + count, 0);
-    assert(actionCount <= strategy.points.length, `${start} ${key} monthly action count`);
+    const carryInCount = strategy.points.filter((point) => point.carryIn).length;
+    assert(actionCount <= strategy.points.length + carryInCount, `${start} ${key} monthly action count`);
     assert(strategy.points.filter((point) => point.actionKey).every((point) => (
       point.actionDecisionDate && point.actionExecutionDate && point.actionExecutionDate > point.actionDecisionDate
     )), `${start} ${key} next-session execution`);
+    assert(strategy.points.filter((point) => point.carryIn).every((point) => (
+      point.carryIn.actionKey && point.carryIn.executionDate > point.carryIn.decisionDate
+    )), `${start} ${key} carry-in next-session execution`);
   }
 
   assert(result.events.length >= (start === "2025-01" ? 1 : 2), `${start} events`);
@@ -131,7 +135,7 @@ function assertBacktestResult(result, start) {
 }
 
 async function main() {
-  assert.equal(RULESET_ID, "2026-07-v6");
+  assert.equal(RULESET_ID, "2026-07-v7");
   assert.equal(MAIN_SIGNAL_POLICY_KEY, "standard");
   assert.equal(DEFAULT_COST_BPS, 5);
   assert.equal(CORE_QQQ_HIGH_REGIME_FRACTION, 0.5);
@@ -213,8 +217,9 @@ async function main() {
     const strategies = start === "2010-01" ? Object.fromEntries(result.strategies.map((strategy) => [strategy.key, strategy])) : assertBacktestResult(result, start);
     if (start === "1990-01") {
       assert(strategies.signal.actionCounts.crashDefense >= 1, "full history should exercise crashDefense");
-      const crossMonth = strategies.signal.points.find((point) => point.actionDecisionDate === "1997-10-31");
-      assert.equal(crossMonth?.actionExecutionDate, "1997-11-03", "month-end decisions must execute next session");
+      const crossMonth = strategies.signal.points.find((point) => point.carryIn?.decisionDate === "1997-10-31");
+      assert.equal(crossMonth?.carryIn?.executionDate, "1997-11-03", "month-end decisions must execute next session");
+      assert(crossMonth?.actionKey && crossMonth.actionDecisionDate?.startsWith("1997-11"), "carry-in must not swallow the new month's own lock");
     }
     if (start === "2020-01") {
       assert(strategies.signal.actionCounts.bottomAttack >= 1, "2020 sample should capture at least one bottom/upgrade");
