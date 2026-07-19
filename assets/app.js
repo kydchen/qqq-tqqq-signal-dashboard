@@ -764,9 +764,24 @@ function orderPlanIsFresh() {
   return Number.isFinite(generatedAt) && Date.now() - generatedAt <= 30 * 60 * 1000;
 }
 
+function riskProfileNoteText(profile) {
+  const policy = marketData?.riskPolicies?.[profile];
+  if (!policy) return copy[lang].execution.profiles[profile]?.[1] || "";
+  const pct = (value) => `${Math.round(value * 100)}%`;
+  if (profile === "conservative") return copy[lang].execution.profiles.conservative[1];
+  if (lang === "zh") {
+    return profile === "standard"
+      ? `TQQQ 月度检查上限 ${pct(policy.maxTqqq)}，常态地板 ${pct(policy.normalTqqqFloor)}，大底先到 ${pct(policy.bottomTqqqTarget)}、后续最高 ${pct(policy.rampTqqqTarget)}。`
+      : `手动情景：TQQQ 月度检查上限 ${pct(policy.maxTqqq)}，常态地板 ${pct(policy.normalTqqqFloor)}，大底目标 ${pct(policy.bottomTqqqTarget)}，不用于主回测。`;
+  }
+  return profile === "standard"
+    ? `TQQQ monthly-review cap ${pct(policy.maxTqqq)}, normal floor ${pct(policy.normalTqqqFloor)}, bottom target ${pct(policy.bottomTqqqTarget)} then up to ${pct(policy.rampTqqqTarget)}.`
+    : `Manual scenario: TQQQ monthly-review cap ${pct(policy.maxTqqq)}, normal floor ${pct(policy.normalTqqqFloor)}, bottom target ${pct(policy.bottomTqqqTarget)}; not used in the main backtest.`;
+}
+
 function renderRiskProfileNote() {
   const profile = $("riskProfileInput").value;
-  $("riskProfileNote").textContent = copy[lang].execution.profiles[profile]?.[1] || "";
+  $("riskProfileNote").textContent = riskProfileNoteText(profile);
 }
 
 function showAccountError(message = "") {
@@ -776,22 +791,27 @@ function showAccountError(message = "") {
 
 function localizedPlannerError(error) {
   if (lang !== "zh") return error.message;
-  const labels = {
-    Cash: "现金",
-    "QQQ shares": "QQQ 份额",
-    "TQQQ shares": "TQQQ 份额",
-    "Monthly contribution": "本月投入",
-    "Trading cost": "交易摩擦",
-    "QQQ price": "QQQ 报价",
-    "TQQQ price": "TQQQ 报价",
-  };
-  for (const [english, chinese] of Object.entries(labels)) {
-    if (error.message.startsWith(`${english} must be between`)) return `${chinese}超出允许范围。`;
+  if (error.code === "RANGE") {
+    const fieldLabels = {
+      Cash: "现金",
+      "QQQ shares": "QQQ 份额",
+      "TQQQ shares": "TQQQ 份额",
+      "Monthly contribution": "本月投入",
+      "Trading cost": "交易摩擦",
+      "QQQ price": "QQQ 报价",
+      "TQQQ price": "TQQQ 报价",
+      "Maximum TQQQ weight": "TQQQ 上限",
+      "Normal TQQQ floor": "TQQQ 常态地板",
+      "Bottom TQQQ target": "TQQQ 大底目标",
+      "Ramp TQQQ target": "TQQQ 爬坡目标",
+      "Core QQQ high-regime fraction": "高位 QQQ 投入比例",
+    };
+    return `${fieldLabels[error.field] || error.field}超出允许范围。`;
   }
-  if (error.message.includes("risk policy")) return "风险档参数不可用，请刷新数据。";
-  if (error.message.includes("quotes are unavailable")) return "ETF 收盘报价不可用，请刷新数据。";
-  if (error.message.includes("TQQQ targets")) return "TQQQ 目标不能超过风险档上限。";
-  if (error.message.includes("Trading cost must")) return "交易摩擦只能选择 0、5 或 10 bp。";
+  if (error.code === "POLICY_UNAVAILABLE") return "风险档参数不可用，请刷新数据。";
+  if (error.code === "TARGETS_EXCEED_CAP") return "TQQQ 目标不能超过风险档上限。";
+  if (error.code === "QUOTES_UNAVAILABLE") return "ETF 收盘报价不可用，请刷新数据。";
+  if (error.code === "COST_CHOICE") return "交易摩擦只能选择 0、5 或 10 bp。";
   return "订单输入无效，请检查持仓、风险档和报价。";
 }
 
@@ -823,7 +843,7 @@ function renderOrderDraft() {
     const sideClass = order.side === "BUY" ? "buy" : "sell";
     return `<div class="order-row">
       <span class="order-side ${sideClass}">${side}</span>
-      <div class="order-main"><strong>${order.symbol}</strong><span>${fmtNumber(order.shares, order.shares % 1 ? 3 : 0)} ${lang === "zh" ? "份" : "shares"} @ ${fmtMoneyPrecise(order.price)}</span></div>
+      <div class="order-main"><strong>${escapeHtml(order.symbol)}</strong><span>${fmtNumber(order.shares, order.shares % 1 ? 3 : 0)} ${lang === "zh" ? "份" : "shares"} @ ${fmtMoneyPrecise(order.price)}</span></div>
       <div class="order-amount"><strong>${fmtMoney(order.notional)}</strong><span>${t.estimatedCost} ${fmtMoneyPrecise(order.estimatedCost)}</span></div>
     </div>`;
   }).join("");
@@ -1188,6 +1208,7 @@ function renderStatic() {
   renderJournal();
   renderStrategyToggles();
   renderBacktest();
+  renderEdgeCard();
 }
 
 function renderActionCatalog() {
@@ -1385,9 +1406,9 @@ function renderMarket() {
     chip(t.chips.quietVix, decision.defensiveFlags.quietVix),
   );
   renderDecisionHistory();
-  renderEdgeCard();
-  renderExecutionGuides();
-  renderOrderDraft();
+  // renderExecutionGuides, renderOrderDraft, and renderEdgeCard are driven
+  // once by renderStatic; renderMarket is only called from there, so it
+  // must not re-render them.
 }
 
 function renderStrategyToggles() {
@@ -1412,9 +1433,7 @@ function renderStrategyToggles() {
 function renderBacktest() {
   if (!backtestData) return;
   renderChart();
-  renderExecutionGuides();
   renderWorkbench();
-  renderEdgeCard();
   const t = copy[lang];
   const cards = visibleStrategies().map((strategy) => {
     const card = document.createElement("article");
@@ -1629,7 +1648,7 @@ function renderEventsView() {
           : "";
         return `
           <article class="event-card">
-            <div class="event-head"><strong>${t.events[event.key] || event.key}</strong><span>${event.start.slice(0, 7)} - ${event.end.slice(0, 7)}</span>${synthetic}</div>
+            <div class="event-head"><strong>${t.events[event.key] || escapeHtml(event.key)}</strong><span>${escapeHtml(event.start.slice(0, 7))} - ${escapeHtml(event.end.slice(0, 7))}</span>${synthetic}</div>
             <div class="event-stats">
               <div><span>${t.workbench.signalReturn}</span><strong>${signal ? fmtSignedPct(signal.returnPct * 100) : "--"}</strong></div>
               <div><span>${t.workbench.qqqReturn}</span><strong>${qqq ? fmtSignedPct(qqq.returnPct * 100) : "--"}</strong></div>
@@ -1717,16 +1736,16 @@ function renderDataView() {
         return `
           <div class="data-quality-item">
             <strong>${key.toUpperCase()}</strong>
-            <span>${item.start || "--"} - ${item.end || "--"}</span>
+            <span>${escapeHtml(item.start || "--")} - ${escapeHtml(item.end || "--")}</span>
             <small>${item.count || 0} ${t.workbench.observations}</small>
           </div>
         `;
       }).join("")}
     </div>
     <div class="data-note-grid">
-      <div><span>${t.workbench.actualStart}</span><strong>QQQ ${q.qqqActualStart || "--"} / TQQQ ${q.tqqqActualStart || "--"}</strong></div>
-      <div><span>${t.workbench.syntheticEnd}</span><strong>TQQQ ${q.tqqqSyntheticEnd || "--"}</strong></div>
-      <div><span>${stale.length ? t.workbench.stale : t.workbench.fresh}</span><strong>${stale.length ? stale.join(", ") : "OK"}</strong></div>
+      <div><span>${t.workbench.actualStart}</span><strong>QQQ ${escapeHtml(q.qqqActualStart || "--")} / TQQQ ${escapeHtml(q.tqqqActualStart || "--")}</strong></div>
+      <div><span>${t.workbench.syntheticEnd}</span><strong>TQQQ ${escapeHtml(q.tqqqSyntheticEnd || "--")}</strong></div>
+      <div><span>${stale.length ? t.workbench.stale : t.workbench.fresh}</span><strong>${stale.length ? escapeHtml(stale.join(", ")) : "OK"}</strong></div>
     </div>
     <h4>${t.workbench.modelNotes}</h4>
     <ul class="model-notes">
@@ -2100,6 +2119,8 @@ async function loadBacktest() {
     if (requestId !== backtestRequestId) return;
     backtestData = data;
     renderBacktest();
+    renderExecutionGuides();
+    renderEdgeCard();
     return true;
   } catch (error) {
     if (requestId !== backtestRequestId) return;

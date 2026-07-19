@@ -1,6 +1,6 @@
 {
   "name": "qqq-tqqq-signal-dashboard",
-  "version": "0.7.0",
+  "version": "0.7.2",
   "private": false,
   "description": "Local-first QQQ/TQQQ decision cockpit with versioned evidence, next-session execution, and manual order drafts.",
   "scripts": {

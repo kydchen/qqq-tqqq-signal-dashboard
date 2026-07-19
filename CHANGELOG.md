@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.2 - 2026-07-19
+
+Frontend and data hardening; no strategy or backtest behavior change.
+
+- Execution planner errors now carry stable codes (`RANGE`, `POLICY_UNAVAILABLE`, `TARGETS_EXCEED_CAP`, `QUOTES_UNAVAILABLE`, `COST_CHOICE`, `ACTION_UNAVAILABLE`) and the Chinese messages map codes instead of matching English message prefixes.
+- Unified HTML escaping for API-sourced fields in the events, data-quality, and order-draft views.
+- Removed duplicate render passes: `renderMarket` and `renderBacktest` no longer re-render the execution guides, order draft, or edge card; each section renders exactly once per `renderStatic` pass, and `loadBacktest` refreshes the backtest-derived cards explicitly.
+- Risk-profile notes are generated from the API's `riskPolicies` values instead of hardcoded percentages, with the static copy as fallback before data loads.
+- Snapshot read-side validation: ISO dates, strictly ordered entries (CAPE is newest-first), finite positive values; large daily jumps warn once per process instead of rejecting real market data.
+- `/api/health` now reports `status: "degraded"` (still HTTP 200) when an upstream source is down and snapshot fallback is serving, so upstream outages stay visible to monitoring.
+
 ## 0.7.1 - 2026-07-19
 
 Evidence-framing fixes; no strategy or backtest behavior change.

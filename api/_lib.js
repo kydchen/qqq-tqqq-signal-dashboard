@@ -313,6 +313,26 @@ async function loadData() {
   };
 }
 
+let snapshotJumpWarned = false;
+
+function validateSnapshotPoints(name, points, { daily = false, order = "asc" } = {}) {
+  let previous = null;
+  for (const point of points) {
+    if (!point || typeof point.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(point.date)) {
+      throw new Error(`${name} snapshot has a malformed date entry`);
+    }
+    if (previous && (order === "asc" ? point.date <= previous.date : point.date >= previous.date)) {
+      throw new Error(`${name} snapshot dates must be strictly ${order === "asc" ? "increasing" : "decreasing"}`);
+    }
+    if (!Number.isFinite(point.value) || point.value <= 0) throw new Error(`${name} snapshot has a non-finite or non-positive value at ${point.date}`);
+    // Large one-day jumps are real in markets; warn loudly instead of rejecting.
+    if (!snapshotJumpWarned && daily && previous && Math.abs(point.value / previous.value - 1) > 0.5) {
+      console.warn(`${name} snapshot jumps ${(100 * (point.value / previous.value - 1)).toFixed(1)}% on ${point.date}`);
+    }
+    previous = point;
+  }
+}
+
 function loadSnapshotData() {
   const data = {
     nasdaq: loadJsonSnapshot("ndx-snapshot.json"),
@@ -327,7 +347,12 @@ function loadSnapshotData() {
   for (const [name, points] of Object.entries(data)) {
     if (name === "staleSources" || name === "sourceMode") continue;
     if (!Array.isArray(points) || points.length < 60) throw new Error(`${name} snapshot is incomplete`);
+    validateSnapshotPoints(name, points, {
+      daily: ["nasdaq", "qqq", "tqqq", "vix"].includes(name),
+      order: name === "capeLatestFirst" ? "desc" : "asc",
+    });
   }
+  snapshotJumpWarned = true;
   return data;
 }
 
@@ -627,7 +652,9 @@ function memoryAfterAction(memory, decision) {
 }
 
 // Unified monthly signal machine shared by the live panel, the monthly
-// decision log, memory replay, and the backtest. Event order per session:
+// decision log, memory replay, and the backtest. These are shared
+// state-transition functions, not pure functions: each one mutates the
+// passed-in machine object. Event order per session:
 //
 //   open:  month-start contribution, then signalMachineDue releases the
 //          pending order from the previous close (even when that close

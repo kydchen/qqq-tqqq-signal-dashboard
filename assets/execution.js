@@ -6,9 +6,16 @@
   const ACTIONS = new Set(["bottomAttack", "rampTqqq", "smallDipBuy", "crashDefense", "trimHeat", "pauseAtHigh", "normalDca"]);
   const DEFAULT_CORE_QQQ_HIGH_REGIME_FRACTION = 0.5;
 
+  function fail(code, message, field) {
+    const error = new Error(message);
+    error.code = code;
+    if (field) error.field = field;
+    throw error;
+  }
+
   function finiteNonNegative(value, label, max = 1e12) {
     const number = Number(value);
-    if (!Number.isFinite(number) || number < 0 || number > max) throw new Error(`${label} must be between 0 and ${max}.`);
+    if (!Number.isFinite(number) || number < 0 || number > max) fail("RANGE", `${label} must be between 0 and ${max}.`, label);
     return number;
   }
 
@@ -33,8 +40,8 @@
   }
 
   function planOrders(input) {
-    if (!ACTIONS.has(input?.decision?.key)) throw new Error("Current action is unavailable.");
-    if (!input.policy) throw new Error("Risk policy is unavailable.");
+    if (!ACTIONS.has(input?.decision?.key)) fail("ACTION_UNAVAILABLE", "Current action is unavailable.");
+    if (!input.policy) fail("POLICY_UNAVAILABLE", "Risk policy is unavailable.");
     const policy = {
       maxTqqq: finiteNonNegative(input.policy.maxTqqq, "Maximum TQQQ weight", 1),
       normalTqqqFloor: finiteNonNegative(input.policy.normalTqqqFloor, "Normal TQQQ floor", 1),
@@ -42,13 +49,13 @@
       rampTqqqTarget: finiteNonNegative(input.policy.rampTqqqTarget, "Ramp TQQQ target", 1),
     };
     if (policy.normalTqqqFloor > policy.maxTqqq || policy.bottomTqqqTarget > policy.maxTqqq || policy.rampTqqqTarget > policy.maxTqqq) {
-      throw new Error("TQQQ targets cannot exceed the risk policy cap.");
+      fail("TARGETS_EXCEED_CAP", "TQQQ targets cannot exceed the risk policy cap.");
     }
     const prices = {
       qqq: finiteNonNegative(input.quotes?.qqq?.price, "QQQ price"),
       tqqq: finiteNonNegative(input.quotes?.tqqq?.price, "TQQQ price"),
     };
-    if (prices.qqq <= 0 || prices.tqqq <= 0) throw new Error("Current ETF quotes are unavailable.");
+    if (prices.qqq <= 0 || prices.tqqq <= 0) fail("QUOTES_UNAVAILABLE", "Current ETF quotes are unavailable.");
     const state = {
       cash: finiteNonNegative(input.account?.cash, "Cash"),
       qqqShares: finiteNonNegative(input.account?.qqqShares, "QQQ shares"),
@@ -62,7 +69,7 @@
     );
     const fractional = input.account?.fractionalShares !== false;
     const costBps = finiteNonNegative(input.costBps ?? 5, "Trading cost", 10);
-    if (![0, 5, 10].includes(costBps)) throw new Error("Trading cost must be 0, 5, or 10 basis points.");
+    if (![0, 5, 10].includes(costBps)) fail("COST_CHOICE", "Trading cost must be 0, 5, or 10 basis points.");
     const costRate = costBps / 10000;
     const orders = [];
     const starting = weights(state, prices);
