@@ -123,6 +123,8 @@ function assertBacktestResult(result, start) {
   }
 
   assert(result.modelNotes.tqqqHoldingCosts.includes("does not create daily broker margin calls"));
+  assert(result.modelNotes.walkForward.includes("not independent out-of-sample"));
+  assert(result.modelNotes.syntheticScope);
   assert(result.modelNotes.cadence.includes("next trading session"));
   assert(result.modelNotes.sharpe.includes("excess returns"));
   assert(result.modelNotes.limits.includes("design choice"));

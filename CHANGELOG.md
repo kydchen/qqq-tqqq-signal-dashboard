@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 - 2026-07-19
+
+Evidence-framing fixes; no strategy or backtest behavior change.
+
+- Renamed the walk-forward panel to a historical threshold-robustness diagnostic and disclosed in both the UI and `modelNotes.walkForward` that default thresholds were informed by historical walk-forward results, that validation windows overlap, and that thresholds are frozen as of 2026-07 (ruleset v6), so genuine forward evidence can only accumulate from the freeze onward.
+- Labeled event-recap cards that contain synthetic TQQQ history, added a synthetic-range caution to the sensitivity grid for pre-inception start dates, and added `modelNotes.syntheticScope` stating which panels include synthetic TQQQ.
+
 ## 0.7.0 - 2026-07-19
 
 Ruleset `2026-07-v7` unifies the monthly signal state machine and fixes cross-month carry-in handling.

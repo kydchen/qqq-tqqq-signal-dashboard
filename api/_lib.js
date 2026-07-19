@@ -1828,6 +1828,10 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
       wrappers: "Tactical QQQ and tactical TQQQ reuse the same monthly signal decision, but restrict trades to one ETF plus cash.",
       sharpe: "Sharpe uses monthly unit-NAV excess returns over the modeled cash rate, annualized by sqrt(12).",
       evidence: `The headline excludes synthetic TQQQ history and starts at ${evidenceStart}. The allocation-matched benchmark is an ex-post diagnostic rebalanced monthly to the signal strategy's average cash, QQQ, and TQQQ weights; it is not an investable pre-registered rule.`,
+      walkForward: "The walk-forward panel is a historical threshold-robustness diagnostic, not independent out-of-sample evidence: the default thresholds were informed by historical walk-forward results, the validation windows overlap each other, and thresholds are frozen as of 2026-07 (ruleset v6). Genuine forward evidence can only accumulate from the freeze onward.",
+      syntheticScope: startDate < actualTqqqStart
+        ? `This start date includes synthetic pre-inception TQQQ history: event recaps, the sensitivity grid, and the full-sample strategy lines all contain synthetic TQQQ before ${actualTqqqStart}. Only the headline evidence excludes synthetic history.`
+        : "This start date uses actual TQQQ history only; no synthetic TQQQ enters any panel.",
       rareActions: `Fast-crash defense executed ${signalEvidence?.actionCounts?.crashDefense || 0} times in the headline sample. Treat it as a mechanical guardrail, not a statistically validated source of protection.`,
       limits: "The 50% high-regime QQQ rate and standard TQQQ limits are design choices, not optimized parameters. The standard policy reduces leverage relative to the optional aggressive profile, but it can still lag QQQ in strong bull markets and lose materially in drawdowns. No taxes, no residual tracking error after inception, and no broker constraints. Attribution is path-linked, not causal. Past edge versus QQQ DCA is not a guarantee of future edge.",
       notAdvice: "This dashboard is a research and process tool, not investment advice.",

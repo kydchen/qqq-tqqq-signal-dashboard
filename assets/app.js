@@ -145,6 +145,7 @@ const copy = {
     backtestTitle: "比较不同定投方式",
     sensitivityTitle: "参数敏感性",
     sensitivityNote: "三信号策略用深跌阈值和恐慌 VIX 阈值做 ±20% 网格重跑。",
+    sensitivitySyntheticNote: "当前起始时间早于真实 TQQQ 历史,网格结果包含合成 TQQQ 区间,仅作参考。",
     startLabel: "起始时间",
     monthlyFixedLabel: "每月固定投入",
     costLabel: "单边交易摩擦",
@@ -184,8 +185,10 @@ const copy = {
       gain: "贡献",
       months: "月份",
       estimatedPnl: "估算贡献",
-      validationTitle: "Walk-forward 参数验证（按风险调整超额选参）",
-      noValidation: "这个起始年份之后样本太短，暂无可用验证切分。",
+      validationTitle: "历史阈值稳健性诊断(非独立样本外证据)",
+      validationNote: "默认阈值参考过历史 walk-forward 结果,各验证窗口互相重叠,因此不能视为独立的样本外证据;阈值自 2026-07(v6)起冻结,真正的前向证据只能从冻结日后积累。",
+      noValidation: "这个起始年份之后样本太短,暂无可用验证切分。",
+      syntheticEvent: "含合成 TQQQ",
       split: "切分点",
       bestThresholds: "训练期最佳阈值",
       trained: "训练期",
@@ -436,6 +439,7 @@ const copy = {
     backtestTitle: "Compare DCA variants",
     sensitivityTitle: "Parameter sensitivity",
     sensitivityNote: "The signal strategy is rerun on a +/-20% grid for deep-drawdown and panic-VIX thresholds.",
+    sensitivitySyntheticNote: "This start date predates actual TQQQ history, so the grid includes synthetic TQQQ and is indicative only.",
     startLabel: "Start date",
     monthlyFixedLabel: "Fixed monthly buy",
     costLabel: "One-way trading friction",
@@ -475,8 +479,10 @@ const copy = {
       gain: "Gain",
       months: "Months",
       estimatedPnl: "Estimated PnL",
-      validationTitle: "Walk-forward validation (risk-adjusted excess selection)",
+      validationTitle: "Historical threshold robustness diagnostic",
+      validationNote: "Default thresholds were informed by historical walk-forward results and validation windows overlap, so this is not independent out-of-sample evidence. Thresholds are frozen as of 2026-07 (ruleset v6); genuine forward evidence can only accumulate from the freeze onward.",
       noValidation: "This start year leaves too little forward sample for validation splits.",
+      syntheticEvent: "synthetic TQQQ",
       split: "Split",
       bestThresholds: "Best train thresholds",
       trained: "Train",
@@ -1607,6 +1613,7 @@ function renderEventsView() {
   const t = copy[lang];
   const events = backtestData.events || [];
   if (!events.length) return `<p class="muted">${t.workbench.eventsEmpty}</p>`;
+  const tqqqActualStart = backtestData.dataQuality?.tqqqActualStart || "";
   return `
     <h3>${t.workbench.eventsTitle}</h3>
     <div class="event-grid">
@@ -1617,9 +1624,12 @@ function renderEventsView() {
           .filter(([, count]) => count > 0)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3);
+        const synthetic = tqqqActualStart && event.start < tqqqActualStart
+          ? `<span class="data-badge">${t.workbench.syntheticEvent}</span>`
+          : "";
         return `
           <article class="event-card">
-            <div class="event-head"><strong>${t.events[event.key] || event.key}</strong><span>${event.start.slice(0, 7)} - ${event.end.slice(0, 7)}</span></div>
+            <div class="event-head"><strong>${t.events[event.key] || event.key}</strong><span>${event.start.slice(0, 7)} - ${event.end.slice(0, 7)}</span>${synthetic}</div>
             <div class="event-stats">
               <div><span>${t.workbench.signalReturn}</span><strong>${signal ? fmtSignedPct(signal.returnPct * 100) : "--"}</strong></div>
               <div><span>${t.workbench.qqqReturn}</span><strong>${qqq ? fmtSignedPct(qqq.returnPct * 100) : "--"}</strong></div>
@@ -1671,6 +1681,7 @@ function renderValidationView() {
   if (!rows.length) return `<h3>${t.workbench.validationTitle}</h3><p class="muted">${t.workbench.noValidation}</p>`;
   return `
     <h3>${t.workbench.validationTitle}</h3>
+    <p class="muted">${t.workbench.validationNote}</p>
     <div class="table-scroll">
       <table class="plain-table">
         <thead>
@@ -1795,6 +1806,8 @@ function renderSensitivity() {
     return;
   }
   const t = copy[lang];
+  const tqqqActualStart = backtestData?.dataQuality?.tqqqActualStart || "";
+  const includesSynthetic = Boolean(backtestData?.start) && tqqqActualStart && backtestData.start < tqqqActualStart;
   const rows = data.points.map((point) => `
     <tr>
       <td>${fmtPct(point.drawdownThreshold, 0)}</td>
@@ -1807,6 +1820,7 @@ function renderSensitivity() {
     <div>
       <h3>${t.sensitivityTitle}</h3>
       <p>${t.sensitivityNote}</p>
+      ${includesSynthetic ? `<p class="muted">${t.sensitivitySyntheticNote}</p>` : ""}
       <strong>${fmtMoney(data.minFinalValue)} - ${fmtMoney(data.maxFinalValue)}</strong>
     </div>
     <table>

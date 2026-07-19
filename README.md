@@ -12,9 +12,9 @@ The chart can optionally overlay actual QQQ closing prices on a right-side y-axi
 The workbench adds:
 
 - Position weights for the signal strategy: cash, QQQ, and TQQQ.
-- Event recaps for major regimes such as dot-com, 2008, 2020, 2022, and 2025.
+- Event recaps for major regimes such as dot-com, 2008, 2020, 2022, and 2025, labeled when a window contains synthetic TQQQ.
 - Action attribution by rule type (path-linked, not causal alpha).
-- Walk-forward threshold validation using risk-adjusted excess versus QQQ.
+- Historical threshold-robustness diagnostic using risk-adjusted excess versus QQQ (walk-forward style splits). This is not independent out-of-sample evidence: the default thresholds were informed by these historical results, the validation windows overlap, and thresholds are frozen as of 2026-07 (ruleset v6). Genuine forward evidence can only accumulate from the freeze onward.
 - Data-quality coverage showing real ETF history versus synthetic pre-inception ranges.
 - Execution-mode cards explaining Tactical QQQ and Tactical TQQQ as single-ETF reference modes.
 - Actual-TQQQ headline evidence, an average-allocation static diagnostic, longest relative underperformance, and excess-return Sharpe.
