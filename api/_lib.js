@@ -1153,6 +1153,9 @@ function riskStats(points) {
   return { sharpe, ulcer, sharpeType: "monthlyExcessReturnOverCash" };
 }
 
+// Reference per-day state computation. Kept as the slow, obviously-correct
+// implementation: test/state-consistency.test.cjs compares the O(N) buildStates
+// output against this function over the full history, day by day.
 function stateAt(index, prices, nasdaq, vixByDate, capeChrono, capeCursor) {
   const current5 = mean(nasdaq.slice(Math.max(0, index - 4), index + 1).map((point) => point.value));
   const previous5 = mean(nasdaq.slice(Math.max(0, index - 29), Math.max(1, index - 24)).map((point) => point.value));
@@ -1174,9 +1177,67 @@ function stateAt(index, prices, nasdaq, vixByDate, capeChrono, capeCursor) {
   return { capePercentile, drawdownPct, crash25dPct, vix, vixAvailable };
 }
 
+// O(N) state builder. Produces exactly the same per-day states as calling the
+// reference stateAt for every day: the same slice bounds and summation order
+// are kept, the rolling high uses a monotonic deque (max is order-independent),
+// the VIX 5-day average uses a forward cursor (dates are sorted), and the CAPE
+// percentile is memoized per month because the CAPE cursor only moves monthly.
 function buildStates(prices, nasdaq, vix, capeChrono) {
-  const capeCursor = { index: 0 };
-  return prices.map((price, index) => (index < 30 ? null : stateAt(index, price, nasdaq, vix, capeChrono, capeCursor)));
+  const count = prices.length;
+  const states = new Array(count).fill(null);
+  if (count <= 30) return states;
+
+  const avg5 = new Array(count);
+  const prev5 = new Array(count);
+  for (let i = 0; i < count; i += 1) {
+    const start = Math.max(0, i - 4);
+    let sum = 0;
+    for (let j = start; j <= i; j += 1) sum += nasdaq[j].value;
+    avg5[i] = sum / (i - start + 1);
+    const prevStart = Math.max(0, i - 29);
+    const prevEnd = Math.max(1, i - 24); // slice end, exclusive
+    let prevSum = 0;
+    for (let j = prevStart; j < prevEnd; j += 1) prevSum += nasdaq[j].value;
+    prev5[i] = prevSum / (prevEnd - prevStart);
+  }
+
+  const rollingHigh = new Array(count);
+  const deque = []; // indices into avg5 with decreasing values
+  let head = 0;
+  for (let i = 0; i < count; i += 1) {
+    while (deque.length > head && deque[head] < i - ROLLING_HIGH_DAYS) head += 1;
+    while (deque.length > head && avg5[deque[deque.length - 1]] <= avg5[i]) deque.pop();
+    deque.push(i);
+    rollingHigh[i] = avg5[deque[head]];
+  }
+
+  let vixIndex = -1;
+  let capeIndex = 0;
+  let computedCapeIndex = -1;
+  let capePercentile = NaN;
+  for (let i = 30; i < count; i += 1) {
+    const date = prices[i].date;
+    while (vixIndex + 1 < vix.length && vix[vixIndex + 1].date <= date) vixIndex += 1;
+    while (capeIndex + 1 < capeChrono.length && capeChrono[capeIndex + 1].date <= date) capeIndex += 1;
+    if (computedCapeIndex !== capeIndex) {
+      capePercentile = capePercentileAt(capeChrono, capeIndex);
+      computedCapeIndex = capeIndex;
+    }
+    const current5 = avg5[i];
+    const previous5 = prev5[i];
+    const drawdownPct = 100 * (current5 / rollingHigh[i] - 1);
+    const crash25dPct = previous5 ? 100 * (current5 / previous5 - 1) : 0;
+    const vixAvailable = vixIndex >= 0;
+    let vixAvg = 20;
+    if (vixAvailable) {
+      const vixStart = Math.max(0, vixIndex - 4);
+      let vixSum = 0;
+      for (let j = vixStart; j <= vixIndex; j += 1) vixSum += vix[j].value;
+      vixAvg = vixSum / (vixIndex - vixStart + 1);
+    }
+    states[i] = { capePercentile, drawdownPct, crash25dPct, vix: vixAvg, vixAvailable };
+  }
+  return states;
 }
 
 function replayDecisionMemory(prices, nasdaq, vix, capeChrono, beforeMonth, thresholds = DEFAULT_THRESHOLDS, states = null) {
@@ -1769,6 +1830,9 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
 
 module.exports = {
   backtest,
+  buildPrices,
+  buildStates,
+  stateAt,
   calculateDecision,
   decisionConfidence,
   CORE_QQQ_HIGH_REGIME_FRACTION,
