@@ -1,13 +1,16 @@
 # Target-weight TQQQ sleeve — pre-registration (FROZEN)
 
-Status: **frozen on 2026-07-19, before any implementation output was inspected.**
-Branch: `agent/tqqq-sleeve-prereg`. Ruleset under study: `2026-07-v7` (production
-strategy unchanged; this document registers a research candidate only).
+Status: **pre-registered on 2026-07-21 (Asia/Taipei), before implementation code or output existed.**
+This document registers a research candidate only; the production strategy
+(ruleset `2026-07-v7`) is unchanged. This document merges first on its own;
+implementation then starts on a fresh branch cut from the latest `main`, so
+the frozen rules and the results stay cleanly separated.
 
 This study replaces only the TQQQ sleeve's incremental buy/sell rules with a
-target-weight rebalance. Everything else about the production three-signal
-strategy stays byte-identical. No production strategy, UI copy, or displayed
-evidence may change until results exist and pass independent review.
+target-weight rebalance. Signal logic and retained QQQ/cash action rules
+remain unchanged; portfolio holdings and cash paths may change through sleeve
+funding. No production strategy, UI copy, or displayed evidence may change
+until results exist and pass independent review.
 
 ## Research question
 
@@ -76,6 +79,13 @@ at each monthly execution is therefore:
   by more than 2 percentage points; when trading, rebalance to the **exact
   target** (not the band edge).
 
+The band applies **only to the four build-up states** (normalDca,
+single-low / mild-dip, bottomAttack, rampTqqq). The defensive states
+(trimHeat, pauseAtHigh, crashDefense) always execute their gradual rules
+directly and never pass through the band — otherwise trimHeat would stop
+unwinding whenever the monthly 1/12 step is smaller than 2 pp, contradicting
+"preserve the defensive handling".
+
 ## Path-independence test protocol
 
 Primary evidence is a convergence test, **not** overlapping NAV paths from
@@ -84,22 +94,30 @@ different start dates:
 1. Fix a date D, a signal memory, and a total asset value.
 2. Initialize three portfolios: 100% cash, 100% QQQ, and the current
    production-strategy holding.
-3. Run one monthly execution of each variant.
+3. Run one monthly execution of each variant, for each of these states:
+   normalDca, single-low / mild-dip, bottomAttack, and rampTqqq at every
+   k = 1..6. Defensive states are excluded here because their rules are
+   holdings-dependent by design.
 4. Exact variant: after the rebalance all three portfolios' TQQQ weights must
-   equal the target, up to fee epsilon.
-5. Band variant: each portfolio's distance to target must be ≤ 2 pp + fee
-   epsilon. Because two portfolios can land on opposite sides of the target,
-   the maximum pairwise difference bound is **4 pp + fee epsilon**; do not
-   generalize a ≤2 pp pairwise claim.
+   equal the target, up to the theoretical post-trade weight computed from
+   the existing 5 bps ledger. No adjustable "fee epsilon" parameter exists;
+   assertions use the ledger-derived theoretical weight within floating-point
+   tolerance (1e-9 relative).
+5. Band variant: each portfolio's distance to target must be ≤ 2 pp, measured
+   against the same ledger-derived theoretical weight. Because two portfolios
+   can land on opposite sides of the target, the maximum pairwise difference
+   bound is **4 pp** plus ledger friction; do not generalize a ≤2 pp pairwise
+   claim.
 
 ## Acceptance gates (frozen)
 
 - Final-value ratio `sleeve / current strategy` **≥ 0.97** in at least 5 of
-  the 6 actual-only starts (2010-02-11, 2015, 2020, 2023, 2024, 2025).
+  the 6 actual-only starts (2010-02-11, 2015-01-01, 2020-01-01, 2023-01-01,
+  2024-01-01, 2025-01-01).
   One-sided non-inferiority: **no 1.03 upper bound**; a ratio above 1.03 is
   not a failure but the source of the extra risk exposure must be explained.
 - Max-drawdown worsening ≤ 2 percentage points versus the current strategy in
-  **all 6** actual-only starts.
+  **all 6** actual-only starts (same list as above).
 - Convergence assertions in the protocol above all pass.
 - Report in full: turnover, total fees, and average cash/QQQ/TQQQ weights for
   both variants and the current strategy.
