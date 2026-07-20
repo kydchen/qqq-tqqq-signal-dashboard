@@ -1900,4 +1900,17 @@ module.exports = {
   sourceIsStale,
   yahooBarIsOpen,
   runBacktest,
+  // Appended for research scripts (e.g. scripts/baseline-study.cjs). Purely
+  // additive exports of existing internal primitives; no logic changed.
+  emptyPortfolio,
+  buyQQQ,
+  buyTQQQ,
+  sellQQQ,
+  sellTQQQ,
+  accrueCash,
+  addContribution,
+  updateDrawdown,
+  valueOf,
+  riskStats,
+  summarizePortfolios,
 };
