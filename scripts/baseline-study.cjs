@@ -32,6 +32,32 @@
  * was inspected. The B2/B3 parameters (-10%/-20%/3x/2x and 30/2x) must not be
  * retuned based on the results; results adverse to any plan are reported
  * as-is.
+ *
+ * ROUND 2 FROZEN RULES (frozen 2026-07-20, before viewing any round-2 output)
+ * ------------------------------------------------------------------------
+ * Round 1 showed that B2/B3 mechanically degenerate to B1 because normal
+ * months deploy the full contribution and no cash reserve can accumulate.
+ * Round 2 adds a reserve mechanism to the same naive triggers:
+ *
+ *   B2r Drawdown ladder with reserve (QQQ only, buy-only): in normal months
+ *     invest only 50% of the monthly amount and keep the rest in cash; at
+ *     each month start, if the Nasdaq-100 5-day-average drawdown is <= -20%,
+ *     spend up to 3x the monthly amount from accumulated cash; if <= -10%,
+ *     spend up to 2x.
+ *   B3r VIX rule with reserve (QQQ only, buy-only): in normal months invest
+ *     50% of the monthly amount; at each month start, if the VIX 5-day
+ *     average is >= 30, spend up to 2x the monthly amount from accumulated
+ *     cash.
+ *
+ * Rationale, stated as required: the 50% reserve fraction mirrors the
+ * three-signal strategy's own high-regime throttle (50% core QQQ in
+ * pause/trim months, CORE_QQQ_HIGH_REGIME_FRACTION), and the 2x/3x
+ * multipliers keep the round-1 frozen values. B2r/B3r each keep an
+ * independent cash ledger. 5 bps friction; idle cash accrues the
+ * FEDFUNDS-based short rate as before.
+ *
+ * Declaration: the round-2 rules were frozen before any round-2 output was
+ * inspected; results adverse to any plan are reported as-is.
  */
 
 const fs = require("fs");
@@ -66,6 +92,14 @@ const STARTS = [
 // B3: VIX 5-day average rule. Both buy-only, QQQ only, spending from cash.
 const B2_MULTIPLIER = (state) => (state.drawdownPct <= -20 ? 3 : state.drawdownPct <= -10 ? 2 : 1);
 const B3_MULTIPLIER = (state) => (state.vix >= 30 ? 2 : 1);
+
+// Round 2 (frozen 2026-07-20): same triggers, but normal months deploy only
+// RESERVE_FRACTION of the monthly amount so a cash reserve accumulates.
+// The 50% fraction mirrors the three-signal strategy's high-regime throttle
+// (CORE_QQQ_HIGH_REGIME_FRACTION); multipliers keep the round-1 frozen values.
+const RESERVE_FRACTION = 0.5;
+const B2R_MULTIPLIER = B2_MULTIPLIER;
+const B3R_MULTIPLIER = B3_MULTIPLIER;
 
 // Minimal month-end point, shaped like the engine's record() output for the
 // fields riskStats consumes (date, nav, shortRate).
@@ -103,6 +137,65 @@ function runNaivePlan(prices, states, startDate, multiplierFor) {
   }
   if (previousPrice) portfolio.points.push(monthPoint(portfolio, previousPrice));
   return { portfolio, finalPrices: previousPrice || prices.at(-1) };
+}
+
+// Round-2 variant: same monthly buy-only loop, but normal months deploy only
+// RESERVE_FRACTION x monthlyAmount so a reserve accumulates; trigger months
+// (multiplier > 1) target multiplier x monthlyAmount, capped by available
+// cash. Every trigger month is instrumented: requested multiplier, cash
+// available at the month start (after this month's contribution), intended
+// spend, and actual spend.
+function runReservePlan(prices, states, startDate, multiplierFor) {
+  const portfolio = emptyPortfolio(COST_BPS);
+  const stats = { months: 0, triggers: [] };
+  let lastMonth = "";
+  let previousPrice = null;
+  for (let i = 30; i < prices.length; i += 1) {
+    const price = prices[i];
+    if (price.date < startDate) continue;
+    accrueCash(portfolio, price);
+    const month = price.date.slice(0, 7);
+    if (month !== lastMonth) {
+      if (previousPrice) portfolio.points.push(monthPoint(portfolio, previousPrice));
+      lastMonth = month;
+      stats.months += 1;
+      addContribution(portfolio, MONTHLY, price);
+      const multiplier = multiplierFor(states[i]);
+      const target = multiplier > 1 ? MONTHLY * multiplier : MONTHLY * RESERVE_FRACTION;
+      const cashAvailable = portfolio.cash;
+      const spent = Math.max(0, Math.min(cashAvailable, target));
+      if (multiplier > 1) {
+        stats.triggers.push({ date: price.date, multiplier, cashAvailable, intended: target, spent });
+      }
+      buyQQQ(portfolio, target, price.qqq);
+    }
+    updateDrawdown(portfolio, price);
+    previousPrice = price;
+  }
+  if (previousPrice) portfolio.points.push(monthPoint(portfolio, previousPrice));
+  return { portfolio, finalPrices: previousPrice || prices.at(-1), stats };
+}
+
+function summarizeTriggers(stats) {
+  const triggers = stats.triggers;
+  const tier2 = triggers.filter((trigger) => trigger.multiplier === 2);
+  const tier3 = triggers.filter((trigger) => trigger.multiplier === 3);
+  const short = triggers.filter((trigger) => trigger.spent < trigger.intended - 1e-6);
+  const achieved = triggers.map((trigger) => trigger.spent / MONTHLY);
+  const achievedTier3 = tier3.map((trigger) => trigger.spent / MONTHLY);
+  return {
+    months: stats.months,
+    triggerCount: triggers.length,
+    tier2Count: tier2.length,
+    tier3Count: tier3.length,
+    shortCount: short.length,
+    intendedTotal: triggers.reduce((sum, trigger) => sum + trigger.intended, 0),
+    spentTotal: triggers.reduce((sum, trigger) => sum + trigger.spent, 0),
+    avgAchieved: achieved.length ? achieved.reduce((sum, value) => sum + value, 0) / achieved.length : null,
+    minAchieved: achieved.length ? Math.min(...achieved) : null,
+    avgAchievedTier3: achievedTier3.length ? achievedTier3.reduce((sum, value) => sum + value, 0) / achievedTier3.length : null,
+    minAchievedTier3: achievedTier3.length ? Math.min(...achievedTier3) : null,
+  };
 }
 
 function metricsOf(portfolio, finalPrices) {
@@ -174,6 +267,48 @@ function main() {
         synthetic: flags.length ? flags.join("+") : "—",
       });
     }
+  }
+
+  // ================= Round 2: reserve-based naive plans =================
+  // B1/B4 metrics are reused from the round-1 rows; B2r/B3r each run their
+  // own independent cash ledger via runReservePlan.
+  const plansR2 = [
+    { key: "B1", label: "B1 QQQ DCA" },
+    { key: "B2r", label: "B2r Drawdown ladder + 50% reserve" },
+    { key: "B3r", label: "B3r VIX rule + 50% reserve" },
+    { key: "B4", label: "B4 Three-signal (standard)" },
+  ];
+  const rowsR2 = [];
+  const triggerRows = [];
+  for (const start of STARTS) {
+    const b2rRun = runReservePlan(prices, states, start, B2R_MULTIPLIER);
+    const b3rRun = runReservePlan(prices, states, start, B3R_MULTIPLIER);
+    const b2r = metricsOf(b2rRun.portfolio, b2rRun.finalPrices);
+    const b3r = metricsOf(b3rRun.portfolio, b3rRun.finalPrices);
+    const b1Row = rows.find((row) => row.start === start && row.plan === "B1");
+    const b4Row = rows.find((row) => row.start === start && row.plan === "B4");
+    const metricsByKey = { B1: b1Row, B2r: b2r, B3r: b3r, B4: b4Row };
+    const syntheticQqq = qqqActualStart && start < qqqActualStart;
+    const syntheticTqqq = tqqqActualStart && start < tqqqActualStart;
+    for (const plan of plansR2) {
+      const flags = [];
+      if (syntheticQqq) flags.push("sQQQ");
+      if (plan.key === "B4" && syntheticTqqq) flags.push("sTQQQ");
+      const source = metricsByKey[plan.key];
+      rowsR2.push({
+        start,
+        plan: plan.key,
+        label: plan.label,
+        finalValue: source.finalValue,
+        contributed: source.contributed,
+        maxDrawdown: source.maxDrawdown,
+        sharpe: source.sharpe,
+        multiple: source.multiple,
+        synthetic: flags.length ? flags.join("+") : "—",
+      });
+    }
+    triggerRows.push({ start, plan: "B2r", ...summarizeTriggers(b2rRun.stats) });
+    triggerRows.push({ start, plan: "B3r", ...summarizeTriggers(b3rRun.stats) });
   }
 
   // ---- Dispersion summary: worst start row per plan (by multiple). ----
@@ -248,12 +383,93 @@ function main() {
     );
   }
 
+  // ---- Round 2: dispersion summary and preliminary readings. ----
+  const worstRowsR2 = plansR2.map((plan) => {
+    const planRows = rowsR2.filter((row) => row.plan === plan.key && row.multiple != null);
+    const worst = planRows.reduce((a, b) => (b.multiple < a.multiple ? b : a));
+    const best = planRows.reduce((a, b) => (b.multiple > a.multiple ? b : a));
+    const worstDd = planRows.reduce((a, b) => (b.maxDrawdown < a.maxDrawdown ? b : a));
+    return { plan: plan.key, label: plan.label, worst, best, worstDd };
+  });
+
+  const fmtRatio = (num, den) => {
+    if (!(den > 0)) return "—";
+    const ratio = num / den;
+    return `${ratio.toFixed(Math.abs(ratio - 1) < 0.005 ? 3 : 2)}x`;
+  };
+  const fmtAchieved = (value) => (value == null ? "—" : `${value.toFixed(2)}x`);
+
+  const readingsR2 = [];
+  for (const start of STARTS) {
+    const startRows = rowsR2.filter((row) => row.start === start);
+    const byFinal = [...startRows].sort((a, b) => b.finalValue - a.finalValue);
+    // Rank with explicit ties: final values within $1 are grouped with "=".
+    const groups = [];
+    for (const row of byFinal) {
+      const last = groups.at(-1);
+      if (last && Math.abs(last[0].finalValue - row.finalValue) < 1) last.push(row);
+      else groups.push([row]);
+    }
+    const ranking = groups.map((group) => group.map((row) => row.plan).join(" = ")).join(" > ");
+    const rowByPlan = Object.fromEntries(startRows.map((row) => [row.plan, row]));
+    readingsR2.push(
+      `- ${start}: final-value ranking ${ranking}; `
+      + `B2r/B1 = ${fmtRatio(rowByPlan.B2r.finalValue, rowByPlan.B1.finalValue)}, `
+      + `B3r/B1 = ${fmtRatio(rowByPlan.B3r.finalValue, rowByPlan.B1.finalValue)}, `
+      + `B4/B1 = ${fmtRatio(rowByPlan.B4.finalValue, rowByPlan.B1.finalValue)}; `
+      + `max drawdown B1 ${fmtPct(rowByPlan.B1.maxDrawdown)} / B2r ${fmtPct(rowByPlan.B2r.maxDrawdown)} / B3r ${fmtPct(rowByPlan.B3r.maxDrawdown)} / B4 ${fmtPct(rowByPlan.B4.maxDrawdown)}.`,
+    );
+  }
+  for (const key of ["B2r", "B3r"]) {
+    const beatsB1 = STARTS.filter((start) => {
+      const cand = rowsR2.find((row) => row.start === start && row.plan === key);
+      const base = rowsR2.find((row) => row.start === start && row.plan === "B1");
+      return cand.finalValue > base.finalValue;
+    });
+    const beatsB4 = STARTS.filter((start) => {
+      const cand = rowsR2.find((row) => row.start === start && row.plan === key);
+      const b4 = rowsR2.find((row) => row.start === start && row.plan === "B4");
+      return cand.finalValue > b4.finalValue;
+    });
+    const ddShallower = STARTS.filter((start) => {
+      const cand = rowsR2.find((row) => row.start === start && row.plan === key);
+      const base = rowsR2.find((row) => row.start === start && row.plan === "B1");
+      return cand.maxDrawdown > base.maxDrawdown;
+    });
+    readingsR2.push(
+      `- ${key} final value exceeds B1 in ${beatsB1.length} of ${STARTS.length} starts${beatsB1.length ? ` (${beatsB1.join(", ")})` : ""}; `
+      + `exceeds B4 in ${beatsB4.length} of ${STARTS.length} starts${beatsB4.length ? ` (${beatsB4.join(", ")})` : ""}. `
+      + `${key} max drawdown is shallower than B1 in ${ddShallower.length} of ${STARTS.length} starts.`,
+    );
+  }
+  for (const key of ["B2r", "B3r"]) {
+    const planTriggers = triggerRows.filter((row) => row.plan === key);
+    const startsWith = planTriggers.filter((row) => row.triggerCount > 0).map((row) => row.start);
+    const total = planTriggers.reduce((sum, row) => sum + row.triggerCount, 0);
+    const tier2 = planTriggers.reduce((sum, row) => sum + row.tier2Count, 0);
+    const tier3 = planTriggers.reduce((sum, row) => sum + row.tier3Count, 0);
+    const short = planTriggers.reduce((sum, row) => sum + row.shortCount, 0);
+    const intended = planTriggers.reduce((sum, row) => sum + row.intendedTotal, 0);
+    const spent = planTriggers.reduce((sum, row) => sum + row.spentTotal, 0);
+    const tier3Spent = planTriggers.reduce((sum, row) => sum + (row.avgAchievedTier3 == null ? 0 : row.avgAchievedTier3 * row.tier3Count * MONTHLY), 0);
+    const tier3Avg = tier3 > 0 ? tier3Spent / (tier3 * MONTHLY) : null;
+    const tier3MinValues = planTriggers.filter((row) => row.minAchievedTier3 != null).map((row) => row.minAchievedTier3);
+    const tier3Min = tier3MinValues.length ? Math.min(...tier3MinValues) : null;
+    readingsR2.push(
+      `- ${key} triggers fired in ${startsWith.length} of ${STARTS.length} starts${startsWith.length ? ` (${startsWith.join(", ")})` : ""}: `
+      + `${total} trigger months in total (${tier2} at 2x${tier3 > 0 ? `, ${tier3} at 3x` : ""}). `
+      + `Cash covered the full requested multiplier in ${total - short} of ${total} trigger months; ${short} months were cash-constrained. `
+      + `Aggregate intended spend ${fmtUsd(intended)} vs actual ${fmtUsd(spent)} (${intended > 0 ? `${(100 * spent / intended).toFixed(1)}%` : "—"} deployed).`
+      + (tier3 > 0 ? ` In 3x months the achieved spend averaged ${fmtAchieved(tier3Avg)} of the monthly amount (worst month ${fmtAchieved(tier3Min)}).` : ""),
+    );
+  }
+
   // ---- Report. ----
   const lines = [];
   lines.push("# Naive Baseline Comparison Study");
   lines.push("");
   lines.push(`Generated by \`scripts/baseline-study.cjs\` on ${new Date().toISOString().slice(0, 10)} (UTC).`);
-  lines.push(`Data: versioned snapshots \`${snapshotId}\` (offline). Rules frozen ${FREEZE_DATE}, before viewing any output of this study.`);
+  lines.push(`Data: versioned snapshots \`${snapshotId}\` (offline). Round-1 rules frozen ${FREEZE_DATE} before viewing any round-1 output; round-2 rules frozen ${FREEZE_DATE} before viewing any round-2 output.`);
   lines.push("");
   lines.push("## Frozen rules");
   lines.push("");
@@ -296,6 +512,53 @@ function main() {
   lines.push("## Preliminary readings (facts only, no recommendation)");
   lines.push("");
   lines.push(...readings);
+  lines.push("");
+  lines.push("---");
+  lines.push("");
+  lines.push(`## Round 2 — reserve-based naive rules (frozen ${FREEZE_DATE})`);
+  lines.push("");
+  lines.push("Round 1 showed that B2/B3 mechanically degenerate to B1: normal months deploy the full contribution, so no cash reserve can accumulate and the 2x/3x multipliers never bind. Round 2 repeats the comparison with a reserve mechanism added to the same naive triggers, and instruments every trigger month for cash sufficiency.");
+  lines.push("");
+  lines.push("### Frozen rules (round 2)");
+  lines.push("");
+  lines.push("- **B2r Drawdown ladder with reserve** (QQQ only, buy-only): in normal months invest only 50% of the monthly amount and keep the rest in cash; at each month start, if the Nasdaq-100 5-day-average drawdown is <= -20%, spend up to 3x the monthly amount from accumulated cash; if <= -10%, spend up to 2x.");
+  lines.push("- **B3r VIX rule with reserve** (QQQ only, buy-only): in normal months invest 50% of the monthly amount; at each month start, if the VIX 5-day average is >= 30, spend up to 2x the monthly amount from accumulated cash.");
+  lines.push("- Rationale, stated as required: the 50% reserve fraction mirrors the three-signal strategy's own high-regime throttle (50% core QQQ in pause/trim months, `CORE_QQQ_HIGH_REGIME_FRACTION`); the 2x/3x multipliers and the -10%/-20%/30 thresholds keep the round-1 frozen values. B2r/B3r each keep an independent cash ledger. Same 5 bps friction and FEDFUNDS cash accrual as round 1.");
+  lines.push("");
+  lines.push("Declaration: the round-2 rules above were frozen before any round-2 output was inspected; results adverse to any plan are reported as-is.");
+  lines.push("");
+  lines.push("### Method (round 2)");
+  lines.push("");
+  lines.push("- Identical setup to round 1 (11 starts, $1,000 monthly, 5 bps, same state locks); B1 and B4 are reused from the round-1 runs. B2r/B3r run a separate monthly loop (`runReservePlan`): normal months buy `min(cash, 0.5 x monthly)`, trigger months buy `min(cash, N x monthly)`.");
+  lines.push("- Every trigger month records the requested multiplier, cash available at the month start (after that month's contribution), intended spend, and actual spend; the trigger table below reports where the reserve was insufficient.");
+  lines.push("");
+  lines.push("### Results by start date (round 2)");
+  lines.push("");
+  lines.push("| Start | Plan | Final value | Max drawdown | Sharpe | Multiple | Contributed | Synthetic |");
+  lines.push("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |");
+  for (const row of rowsR2) {
+    lines.push(`| ${row.start} | ${row.plan} | ${fmtUsd(row.finalValue)} | ${fmtPct(row.maxDrawdown)} | ${fmtSharpe(row.sharpe)} | ${fmtX(row.multiple)} | ${fmtUsd(row.contributed)} | ${row.synthetic} |`);
+  }
+  lines.push("");
+  lines.push("### Trigger and cash-sufficiency statistics (round 2)");
+  lines.push("");
+  lines.push("| Start | Plan | Months | 2x trigger months | 3x trigger months | Cash-short trigger months | Avg achieved spend (x monthly) | Worst achieved (x monthly) | Intended spend | Actual spend |");
+  lines.push("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+  for (const row of triggerRows) {
+    lines.push(`| ${row.start} | ${row.plan} | ${row.months} | ${row.tier2Count} | ${row.tier3Count} | ${row.shortCount} | ${fmtAchieved(row.avgAchieved)} | ${fmtAchieved(row.minAchieved)} | ${fmtUsd(row.intendedTotal)} | ${fmtUsd(row.spentTotal)} |`);
+  }
+  lines.push("");
+  lines.push("### Worst-start rows (round 2, dispersion across starts)");
+  lines.push("");
+  lines.push("| Plan | Worst start (by multiple) | Multiple | Max drawdown in worst start | Final value | Multiple spread (best - worst) | Deepest drawdown start | Deepest drawdown |");
+  lines.push("| --- | --- | ---: | ---: | ---: | ---: | --- | ---: |");
+  for (const summary of worstRowsR2) {
+    lines.push(`| ${summary.plan} | ${summary.worst.start} | ${fmtX(summary.worst.multiple)} | ${fmtPct(summary.worst.maxDrawdown)} | ${fmtUsd(summary.worst.finalValue)} | ${fmtX(summary.best.multiple - summary.worst.multiple)} | ${summary.worstDd.start} | ${fmtPct(summary.worstDd.maxDrawdown)} |`);
+  }
+  lines.push("");
+  lines.push("### Preliminary readings (round 2, facts only, no recommendation)");
+  lines.push("");
+  lines.push(...readingsR2);
   lines.push("");
 
   const report = `${lines.join("\n")}\n`;
