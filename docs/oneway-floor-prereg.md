@@ -38,12 +38,21 @@ unreplaced states; the floor variant buys up to 10% and therefore cannot
 breach the cap through its own leg, but the cap is still enforced after its
 rebalance for uniformity with #9.
 
-Known asymmetry, declared up front: the production normalDca floor buys up to
-10% **only in normalDca months**, while S1-floor applies the one-way floor to
-normalDca months *as its replaced state* — the two are close but not
-identical, because production also tops up the floor in normalDca months
-through `buyTQQQToTarget` and never buys TQQQ in smallDip months. This is a
-boundary note, not a confound we hide.
+Cap-driven sales vs the floor sell leg: entering a month with weight above
+40% still triggers the post-rebalance cap sale. Tests therefore assert the
+precise property — **the floor adjustment logic itself never calls a TQQQ
+sell** — and cap-enforcement sales are recorded separately from the sleeve's
+own sells, so the "zero sell leg" claim applies to the floor logic, not to
+cap enforcement.
+
+Known asymmetry, stated precisely: in production, normalDca tops TQQQ up to
+the floor **first** and buys QQQ **after**; in S1-floor the retained QQQ
+action runs **first** and the TQQQ top-up is funded **after** from remaining
+cash, then from QQQ sales. The order of the two legs and the funding source
+both differ; the variants are not "close versions" of the same rule. In
+smallDip months production never buys TQQQ, so S2-floor introduces a buy leg
+where production has none. These are declared differences, not confounds we
+hide.
 
 ## Frozen data snapshot
 
@@ -58,8 +67,9 @@ Per variant (P, S1-exact, S2-exact, S1-floor, S2-floor) × all 11 starts ×
 
 - Final value, max drawdown, Sharpe, average TQQQ weight.
 - Action counts per state: TQQQ shares increased / decreased / unchanged
-  across each execution (the floor variants must show **zero** decreases in
-  their replaced states — asserted in tests).
+  across each execution, split by cause (floor logic vs cap enforcement).
+  Tests assert the floor adjustment logic never sells TQQQ; any decrease
+  recorded under cap enforcement does not count as a floor sell leg.
 - Per-start ratios: `floor / exact` and `floor / P` on final value.
 - Actual-only starts (2010-02-11, 2015-01-01, 2020-01-01, 2023-01-01,
   2024-01-01, 2025-01-01) reported separately from synthetic-TQQQ starts
@@ -69,18 +79,24 @@ Per variant (P, S1-exact, S2-exact, S1-floor, S2-floor) × all 11 starts ×
 ## Decision rule (frozen)
 
 Interpreted on the actual-only starts where #11's `fullGap ≥ 3%`
-(2010-02-11, 2015-01-01, 2020-01-01):
+(2010-02-11, 2015-01-01, 2020-01-01), **for S1-floor and S2-floor
+separately**:
 
-- **Evidence for the downward-sell leg**: `floor / exact ≥ 0.97` in at least
-  2 of these 3 starts for **both** S1-floor and S2-floor — i.e. removing only
-  the sell leg recovers most of the two-way loss.
-- **Evidence against** (the exposure ceiling itself is the problem): floor
-  variants stay materially below P (`floor / P < 0.97` in at least 2 of the
-  3 starts for both states).
-- Mixed or split outcomes are reported as mixed; no winner is declared
-  beyond these two readings. This study does not choose between ratchet and
-  calibrated fixed-target designs; it only isolates the direction of the
-  loss.
+- `floor / exact ≥ 1.03` **and** `floor / P ≥ 0.97`: the downward-sell leg is
+  the main source of the two-way loss, and removing it basically recovers
+  the loss.
+- `floor / exact ≥ 1.03` **but** `floor / P < 0.97`: the sell leg
+  contributes, but cannot fully explain the gap; the residual may come from
+  the buy leg, action ordering, QQQ funding, or path interactions.
+- `floor / exact ≤ 0.97`: does not support the sell-leg explanation.
+- `floor / exact` between 0.97 and 1.03: insufficient evidence.
+
+A joint conclusion is drawn only when S1-floor and S2-floor land in the
+**same** band; otherwise the outcome is reported as split. Note the floor
+variants have no exposure ceiling above 10%, so "floor / P < 0.97" is **not**
+read as evidence about a 10% ceiling — it is read per the second bullet
+above. This study does not choose between ratchet and calibrated
+fixed-target designs; it only isolates the direction of the loss.
 
 ## Out of scope
 
