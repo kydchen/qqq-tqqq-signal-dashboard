@@ -1913,4 +1913,7 @@ module.exports = {
   valueOf,
   riskStats,
   summarizePortfolios,
+  // Appended for scripts/tqqq-sleeve-study.cjs: reuse the production cash-drip
+  // rule verbatim instead of copying it. Purely additive; no logic changed.
+  monthlySpendWithDrip,
 };
