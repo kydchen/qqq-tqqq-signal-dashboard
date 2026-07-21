@@ -651,6 +651,9 @@ let selected = new Set(["qqq", "tqqq", "signal", "signalQqq", "signalTqqq"]);
 let showActionMarkers = false;
 let errorMessage = "";
 let backtestRequestId = 0;
+// In-memory backtest response cache (see assets/backtest-cache.js): keyed by
+// normalized {start, cost}, success responses only, cleared on manual refresh.
+const backtestCache = BacktestCache.create();
 let resizeFrame = 0;
 let workbenchView = "positions";
 let currentOrderPlan = null;
@@ -2115,7 +2118,7 @@ async function loadBacktest() {
   const cost = $("costInput").value;
   setBacktestLoading(true);
   try {
-    const data = await fetchJson(`/api/backtest?start=${encodeURIComponent(start)}&cost=${encodeURIComponent(cost)}`);
+    const data = await BacktestCache.fetchCached(backtestCache, { start, cost }, fetchJson);
     if (requestId !== backtestRequestId) return;
     backtestData = data;
     renderBacktest();
@@ -2141,6 +2144,7 @@ async function refreshAllData() {
   const button = $("refreshDataBtn");
   button.disabled = true;
   button.textContent = copy[lang].refreshingData;
+  BacktestCache.clear(backtestCache);
   try {
     await loadAll();
   } finally {

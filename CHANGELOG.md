@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.3 - 2026-07-20
+
+Response slimming, front-end backtest caching, and API determinism; no strategy or backtest behavior change.
+
+- `/api/backtest` accepts an optional `strategies=` comma-separated allowlist (any of `qqq`, `tqqq`, `blend8020`, `signal`, `signalQqq`, `signalTqqq`). It trims the top-level `strategies` array and the nested `events[].strategies` arrays; `qqq` and `signal` are always included because the edge conclusion, event cards, and execution notes depend on them. Unknown keys return HTTP 400. Omitting the parameter keeps the full legacy response unchanged, and the engine always computes every sleeve — only the returned JSON is trimmed.
+- Removed `generatedAt` from the backtest response (the only time-dependent field; the frontend did not use it), and the API is now asserted deterministic: identical inputs serialize byte-identically.
+- The frontend now requests a fixed five-strategy set (the visible curves) regardless of the current checkbox selection and keeps an in-memory cache of successful backtest responses keyed by `{start, cost}`; failed requests are never cached, and the manual refresh button clears the cache.
+
 ## 0.7.2 - 2026-07-19
 
 Frontend and data hardening; no strategy or backtest behavior change.
