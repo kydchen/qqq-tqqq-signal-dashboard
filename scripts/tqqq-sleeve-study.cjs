@@ -767,4 +767,11 @@ module.exports = {
   BUILD_UP_KEYS,
   sleeveTargetWeight,
   CONVERGENCE_TOTAL,
+  // Appended for scripts/state-attribution-study.cjs reuse (pure additions;
+  // runStudy/renderReport behavior is untouched, so the byte-sync test and
+  // the generated report are unaffected).
+  runActionLoop,
+  executeSleeveMonth,
+  applyProductionActionLocal,
+  metricsOf,
 };
