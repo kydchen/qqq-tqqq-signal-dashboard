@@ -9,6 +9,7 @@ const {
   MAX_TQQQ,
   COST_BPS,
   FROZEN_SNAPSHOT_ID,
+  bandFor,
 } = require("../scripts/oneway-floor-study.cjs");
 
 // CI regression guards for the one-way floor study. runStudy executes once
@@ -118,6 +119,47 @@ test("invariants: non-negative cash and post-execution TQQQ weight within cap bo
       );
     }
   }
+});
+
+test("frozen conclusion regression: all six cells land in band A with a joint conclusion", () => {
+  // Pins the conclusion itself, not just the report text: if someone later
+  // changes the generator and regenerates the report, a wrong conclusion
+  // must fail here even though the byte-sync test would still pass.
+  const { decision } = study;
+  assert.equal(decision.ratioRows.length, 3);
+  for (const row of decision.ratioRows) {
+    for (const state of ["S1", "S2"]) {
+      assert(
+        row[state].floorExact >= 1.03 && row[state].floorP >= 0.97,
+        `${row.start} ${state}: floor/exact ${row[state].floorExact}, floor/P ${row[state].floorP} must satisfy band A thresholds`,
+      );
+      assert.equal(row[state].band, "A", `${row.start} ${state} must be band A`);
+    }
+  }
+  // State aggregation: both states cover 3 of 3 interpretable starts.
+  for (const state of ["S1", "S2"]) {
+    const coverage = decision.ratioRows.filter((row) => row[state].band === "A").length;
+    assert.equal(coverage, 3, `${state} band-A coverage must be 3/3`);
+  }
+  assert.equal(decision.s1Band, "A");
+  assert.equal(decision.s2Band, "A");
+  assert.equal(decision.jointBand, "A", "joint conclusion must be band A (sell leg is the main source, loss basically recovered)");
+  assert(decision.joint.startsWith("Joint conclusion"), `unexpected joint wording: ${decision.joint}`);
+});
+
+test("bandFor boundary semantics: exact 0.97 is band C, exact 1.03 is band A/B, strict middle is band D", () => {
+  // floor/exact exactly 0.97 => does not support the sell-leg explanation.
+  assert.equal(bandFor(0.97, 1), "C");
+  assert.equal(bandFor(0.97, 0.5), "C");
+  // floor/exact exactly 1.03 => satisfies the >= 1.03 clause; band then
+  // depends on floor/P (>= 0.97 => A, < 0.97 => B).
+  assert.equal(bandFor(1.03, 0.97), "A");
+  assert.equal(bandFor(1.03, 1.5), "A");
+  assert.equal(bandFor(1.03, 0.969999), "B");
+  // Strict middle 0.97 < x < 1.03 => insufficient evidence.
+  assert.equal(bandFor(0.9700000001, 1), "D");
+  assert.equal(bandFor(1.0299999999, 1), "D");
+  assert.equal(bandFor(1.0, 1), "D");
 });
 
 test("renderReport matches docs/oneway-floor-study.md byte for byte", () => {

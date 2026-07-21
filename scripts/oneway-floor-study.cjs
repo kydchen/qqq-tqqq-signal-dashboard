@@ -286,6 +286,8 @@ function runStudy() {
     floorRecordsByVariant,
     variantRuns,
     replicaRuns,
+    // Frozen decision bands, exposed for the conclusion-pinning test.
+    decision: computeDecision(rows),
   };
 }
 
@@ -302,6 +304,36 @@ function bandFor(floorExact, floorP) {
   if (floorExact >= BAND_HIGH && floorP < BAND_LOW) return "B";
   if (floorExact <= BAND_LOW) return "C";
   return "D"; // 0.97 < floor/exact < 1.03 (strict)
+}
+
+// Frozen decision computation, shared by runStudy (exposed for the
+// conclusion-pinning test) and renderReport. Pure function of the rows;
+// moving it here changes no numbers and no report bytes.
+function computeDecision(rows) {
+  const byStartPlan = Object.fromEntries(rows.map((row) => [`${row.start}|${row.plan}`, row]));
+  const ratioRows = INTERPRETABLE_STARTS.map((start) => {
+    const p = byStartPlan[`${start}|P`].finalValue;
+    const entry = { start };
+    for (const [state, exactKey, floorKey] of [["S1", "S1-exact", "S1-floor"], ["S2", "S2-exact", "S2-floor"]]) {
+      const floorExact = byStartPlan[`${start}|${floorKey}`].finalValue / byStartPlan[`${start}|${exactKey}`].finalValue;
+      const floorP = byStartPlan[`${start}|${floorKey}`].finalValue / p;
+      entry[state] = { floorExact, floorP, band: bandFor(floorExact, floorP) };
+    }
+    return entry;
+  });
+  const aggregateBand = (state) => {
+    const counts = {};
+    for (const row of ratioRows) counts[row[state].band] = (counts[row[state].band] || 0) + 1;
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    return top && top[1] >= 2 ? top[0] : "mixed";
+  };
+  const s1Band = aggregateBand("S1");
+  const s2Band = aggregateBand("S2");
+  const jointBand = s1Band === s2Band && s1Band !== "mixed" ? s1Band : null;
+  const joint = jointBand
+    ? `Joint conclusion (both S1-floor and S2-floor land in band ${s1Band} in ≥ 2 of 3 starts): ${BAND_WORDING[s1Band]}.`
+    : `Outcome: split — S1-floor band ${s1Band}, S2-floor band ${s2Band}; no joint conclusion per the frozen rule.`;
+  return { ratioRows, s1Band, s2Band, jointBand, joint };
 }
 
 function renderReport(study) {
@@ -371,28 +403,7 @@ function renderReport(study) {
   lines.push("");
 
   // ---- Ratios and frozen decision bands. ----
-  const byStartPlan = Object.fromEntries(rows.map((row) => [`${row.start}|${row.plan}`, row]));
-  const ratioRows = INTERPRETABLE_STARTS.map((start) => {
-    const p = byStartPlan[`${start}|P`].finalValue;
-    const entry = { start };
-    for (const [state, exactKey, floorKey] of [["S1", "S1-exact", "S1-floor"], ["S2", "S2-exact", "S2-floor"]]) {
-      const floorExact = byStartPlan[`${start}|${floorKey}`].finalValue / byStartPlan[`${start}|${exactKey}`].finalValue;
-      const floorP = byStartPlan[`${start}|${floorKey}`].finalValue / p;
-      entry[state] = { floorExact, floorP, band: bandFor(floorExact, floorP) };
-    }
-    return entry;
-  });
-  const aggregateBand = (state) => {
-    const counts = {};
-    for (const row of ratioRows) counts[row[state].band] = (counts[row[state].band] || 0) + 1;
-    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-    return top && top[1] >= 2 ? top[0] : "mixed";
-  };
-  const s1Band = aggregateBand("S1");
-  const s2Band = aggregateBand("S2");
-  const joint = s1Band === s2Band && s1Band !== "mixed"
-    ? `Joint conclusion (both S1-floor and S2-floor land in band ${s1Band} in ≥ 2 of 3 starts): ${BAND_WORDING[s1Band]}.`
-    : `Outcome: split — S1-floor band ${s1Band}, S2-floor band ${s2Band}; no joint conclusion per the frozen rule.`;
+  const { ratioRows, s1Band, s2Band, joint } = computeDecision(rows);
 
   lines.push("## Ratios and frozen decision bands (three interpretable actual-only starts)");
   lines.push("");
@@ -416,6 +427,7 @@ function renderReport(study) {
     lines.push(`- ${row.start}: S1 floor/exact ${fmtRatio(row.S1.floorExact)}, floor/P ${fmtRatio(row.S1.floorP)} (band ${row.S1.band}); S2 floor/exact ${fmtRatio(row.S2.floorExact)}, floor/P ${fmtRatio(row.S2.floorP)} (band ${row.S2.band}). Floor variants' replaced months: S1 ${audit1.floorMonths} (${audit1.topUpMonths} top-ups), S2 ${audit2.floorMonths} (${audit2.topUpMonths} top-ups); floor-logic TQQQ sells 0 in both; cap-enforcement sale months S1 ${audit1.capSaleMonths}, S2 ${audit2.capSaleMonths}.`);
   }
   const allActual = rows.filter((row) => ACTUAL_ONLY_STARTS.includes(row.start));
+  const byStartPlan = Object.fromEntries(rows.map((row) => [`${row.start}|${row.plan}`, row]));
   for (const variant of VARIANTS) {
     const subset = allActual.filter((row) => row.plan === variant.key);
     const ratios = subset.map((row) => `${row.start} ${fmtRatio(row.finalValue / byStartPlan[`${row.start}|P`].finalValue)}`);
@@ -453,5 +465,6 @@ module.exports = {
   FROZEN_SNAPSHOT_ID,
   BAND_WORDING,
   bandFor,
+  computeDecision,
   VARIANTS,
 };
