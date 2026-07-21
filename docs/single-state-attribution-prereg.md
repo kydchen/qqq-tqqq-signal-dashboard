@@ -22,7 +22,7 @@ isolation is descriptive evidence for ranking, nothing more.
 - **P**: the production strategy, exactly as in `runBacktest` (signal sleeve).
 - **F**: the full target-weight sleeve, exact variant, exactly as in #9
   (reused, not reimplemented).
-- **S1–S5**: P with exactly one state replaced by its #9 target semantics:
+- **S1–S7**: P with exactly one state replaced by its #9 target semantics:
 
 | Variant | Replaced state | Target semantics (from #9, frozen) |
 | --- | --- | --- |
@@ -31,6 +31,12 @@ isolation is descriptive evidence for ranking, nothing more.
 | S3 | bottomAttack | exact 25% |
 | S4 | rampTqqq | progressive 25% + 15% × k / 6, k = 7 − decision.rampMonths |
 | S5 | trimHeat | max(10%, current weight × 11/12) |
+| S6 | pauseAtHigh | freeze current weight (no trade) |
+| S7 | crashDefense | current weight × 50% |
+
+S6/S7 are included because the 40% cap is checked at different times in P
+and F (see below), so pauseAtHigh and crashDefense are **not** universally
+identical between the production strategy and the #9 sleeve.
 
 No 2 pp band in this round; the band would add a second experimental
 dimension.
@@ -47,22 +53,29 @@ At each monthly execution, for the **replaced** state:
    excess TQQQ sold to cash.
 
 All **other** states execute the full production rules (both legs), including
-their TQQQ legs. Defensive states keep their production gradual handling in
-every variant except S5 (whose replaced state is trimHeat).
+their TQQQ legs.
 
 Shared conventions, inherited from #9 unchanged: T+1 execution (signal
 confirmed at close, executed next session), carry-in handled by the shared
 signal machine, 5 bps friction per buy and sell taken from cash, fractional
-shares fixed on, 40% TQQQ cap enforced after every execution, post-trade
-weights booked as executed (fee drift not corrected).
+shares fixed on, post-trade weights booked as executed (fee drift not
+corrected). The 40% TQQQ cap timing is frozen per variant:
+
+- **P and unreplaced states**: production timing — the cap is enforced
+  **before** the action, exactly as in `runBacktest`.
+- **Replaced states and F**: #9 timing — the cap is enforced **after** the
+  sleeve rebalance.
 
 ## Metrics (frozen)
 
-For each variant (P, F, S1–S5) × each start (all 11 supported starts; 5 bps;
+For each variant (P, F, S1–S7) × each start (all 11 supported starts; 5 bps;
 $1,000 monthly):
 
 - Final value, max drawdown, Sharpe, and average TQQQ weight.
-- Action counts: buy-up-to-target / sell-down-to-target / no-trade, per state.
+- Action counts per state, comparable across all variants: TQQQ **shares
+  increased / decreased / unchanged** across each execution. (The
+  buy-up-to-target / sell-down-to-target wording from #9 does not apply to P
+  or unreplaced states, so it is not used here.)
 - Normalized attribution metrics per start:
   - `fullGap = 1 − F/P` (final-value ratio gap of the full sleeve)
   - `stateGap = 1 − Si/P`
@@ -79,10 +92,17 @@ Actual-only starts (2010-02-11, 2015-01-01, 2020-01-01, 2023-01-01,
 (1990-01-01, 1995-01-01, 2000-01-01, 2005-01-01, 2010-01-01). All start
 windows overlap and are not independent samples.
 
+## Frozen data snapshot
+
+All runs use the same versioned snapshot as #9: **`snapshot-f5c36c72b6dcfa45`**
+(data through 2026-07-17). Implementation tests must assert this
+`dataSnapshotId`, so an automated data refresh cannot silently change the
+study object.
+
 ## Verdict format (frozen)
 
 No win/fail gates. The report presents the per-start ranking of `gapShare`
-across S1–S5 as descriptive evidence only, and explicitly declines to name a
+across S1–S7 as descriptive evidence only, and explicitly declines to name a
 single "main cause". The evidence then informs — but does not pre-commit to —
 one of two follow-ups:
 
