@@ -165,7 +165,16 @@ function runStudy() {
       applyProductionActionLocal(portfolio, decision, price, MONTHLY, ledger);
       return null;
     });
-    replicaRuns.push({ start, finalValue: valueOf(pReplica.portfolio, pReplica.finalPrices), stats: pReplica.stats });
+    replicaRuns.push({
+      start,
+      finalValue: valueOf(pReplica.portfolio, pReplica.finalPrices),
+      stats: pReplica.stats,
+      // Monthly trajectories for the point-by-point parity test: the replica
+      // records points with the same month-end cadence as the engine's
+      // recordMonth, so dates and values must align exactly.
+      points: pReplica.portfolio.points,
+      enginePoints: engineSignal.points,
+    });
 
     // F: full sleeve exact, reused from the #9 implementation.
     const fRun = runCountedVariant(prices, states, start, (portfolio, decision, price, ledger) => (

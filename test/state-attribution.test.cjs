@@ -55,6 +55,41 @@ test("P replica matches the engine signal portfolio final value (1e-9)", () => {
   }
 });
 
+test("P replica monthly trajectory matches the engine signal portfolio point by point", () => {
+  // The per-state TQQQ share counts come from the replica, so a final-value
+  // check alone is not enough: every monthly point must align with the
+  // engine's portfolios.signal — identical dates, and value within 1e-9
+  // relative. (Independent recomputation by review found identical dates on
+  // all 11 starts and a max relative error of ~5.6e-16; this pins it in CI.)
+  let checked = 0;
+  let maxRelativeError = 0;
+  for (const replica of study.replicaRuns) {
+    assert.equal(
+      replica.points.length,
+      replica.enginePoints.length,
+      `${replica.start}: point count ${replica.points.length} vs engine ${replica.enginePoints.length}`,
+    );
+    for (let i = 0; i < replica.points.length; i += 1) {
+      const replicaPoint = replica.points[i];
+      const enginePoint = replica.enginePoints[i];
+      assert.equal(
+        replicaPoint.date,
+        enginePoint.date,
+        `${replica.start} point ${i}: replica date ${replicaPoint.date} vs engine date ${enginePoint.date}`,
+      );
+      const relativeError = Math.abs(replicaPoint.value - enginePoint.value) / Math.max(enginePoint.value, 1e-12);
+      maxRelativeError = Math.max(maxRelativeError, relativeError);
+      assert(
+        relativeError <= 1e-9,
+        `${replica.start} ${enginePoint.date}: replica value ${replicaPoint.value} vs engine ${enginePoint.value} (relative error ${relativeError})`,
+      );
+      checked += 1;
+    }
+  }
+  assert(checked > 0, "no monthly points checked");
+  console.log(`P replica vs engine monthly trajectory: ${checked} points across ${study.replicaRuns.length} starts, max relative error ${maxRelativeError.toExponential(2)}`);
+});
+
 test("F matches the #9 sleeve study exact variant final value (1e-9)", () => {
   const sleeve = runSleeveStudy();
   for (const row of study.rows.filter((item) => item.plan === "F")) {
