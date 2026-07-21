@@ -89,14 +89,19 @@ separately**:
   contributes, but cannot fully explain the gap; the residual may come from
   the buy leg, action ordering, QQQ funding, or path interactions.
 - `floor / exact ≤ 0.97`: does not support the sell-leg explanation.
-- `floor / exact` between 0.97 and 1.03: insufficient evidence.
+- `0.97 < floor / exact < 1.03` (strict): insufficient evidence.
 
 A joint conclusion is drawn only when S1-floor and S2-floor land in the
-**same** band; otherwise the outcome is reported as split. Note the floor
-variants have no exposure ceiling above 10%, so "floor / P < 0.97" is **not**
-read as evidence about a 10% ceiling — it is read per the second bullet
-above. This study does not choose between ratchet and calibrated
-fixed-target designs; it only isolates the direction of the loss.
+**same** band; otherwise the outcome is reported as split. Aggregation across
+starts is frozen as follows: each start is banded independently; for each
+state (S1, S2) separately, a band must cover **at least 2 of the 3 starts**
+for the state to be assigned that band, otherwise the state is recorded as
+`mixed`. A joint conclusion requires both states to land in the same
+(non-mixed) band. Note the floor variants have no exposure ceiling above
+10%, so "floor / P < 0.97" is **not** read as evidence about a 10% ceiling —
+it is read per the second bullet above. This study does not choose between
+ratchet and calibrated fixed-target designs; it only isolates the direction
+of the loss.
 
 ## Out of scope
 
