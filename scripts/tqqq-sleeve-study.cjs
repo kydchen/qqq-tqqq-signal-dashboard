@@ -774,4 +774,8 @@ module.exports = {
   executeSleeveMonth,
   applyProductionActionLocal,
   metricsOf,
+  // Appended for scripts/oneway-floor-study.cjs reuse (pure additions;
+  // runStudy/renderReport behavior is untouched).
+  applyRetainedQqqLeg,
+  enforceTqqqCapLocal,
 };

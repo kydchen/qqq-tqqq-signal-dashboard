@@ -393,4 +393,10 @@ module.exports = {
   MATERIALITY_FULL_GAP,
   NA_MATERIALITY,
   VARIANTS,
+  // Appended for scripts/oneway-floor-study.cjs reuse (pure additions;
+  // runStudy/renderReport behavior is untouched).
+  makeAttributionAction,
+  runCountedVariant,
+  shareCounts,
+  ACTION_ORDER,
 };
