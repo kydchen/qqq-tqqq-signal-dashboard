@@ -98,7 +98,62 @@ Date D = 2020-04-15 (first trading day on/after 2020-04-15); total asset value $
 
 The test suite re-derives the theoretical post-trade weights from the 5 bps ledger independently and asserts: exact-variant weights equal the ledger-derived theoretical weights within 1e-9 relative (no adjustable fee epsilon); band-variant weights sit within 2pp of the same theoretical weights (plus ledger friction) with pairwise differences within 4pp plus ledger friction.
 
-## Preliminary readings (facts only, no recommendation)
+## Action-level semantic audit
+
+Per-execution direction of the sleeve rebalance, derived from the recorded pre-rebalance weight and the executed target (audit adds recording only; no backtest number changes). Sell-down = TQQQ sold down to the target weight; buy-up = TQQQ bought up to the target weight; no sleeve trade = pauseAtHigh freeze or a build-up month inside the 2pp band.
+
+### All 11 starts
+
+| Variant | State | Executions | Sell-down to target | Buy-up to target | No sleeve trade |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Sleeve exact | normalDca | 464 | 265 | 199 | 0 |
+| Sleeve exact | smallDipBuy | 418 | 130 | 288 | 0 |
+| Sleeve exact | bottomAttack | 134 | 53 | 81 | 0 |
+| Sleeve exact | rampTqqq | 281 | 97 | 184 | 0 |
+| Sleeve exact | trimHeat | 310 | 234 | 76 | 0 |
+| Sleeve exact | pauseAtHigh | 677 | 0 | 0 | 677 |
+| Sleeve exact | crashDefense | 4 | 4 | 0 | 0 |
+| Sleeve 2pp band | normalDca | 464 | 61 | 23 | 380 |
+| Sleeve 2pp band | smallDipBuy | 418 | 44 | 112 | 262 |
+| Sleeve 2pp band | bottomAttack | 134 | 37 | 70 | 27 |
+| Sleeve 2pp band | rampTqqq | 281 | 33 | 134 | 114 |
+| Sleeve 2pp band | trimHeat | 310 | 233 | 77 | 0 |
+| Sleeve 2pp band | pauseAtHigh | 677 | 0 | 0 | 677 |
+| Sleeve 2pp band | crashDefense | 4 | 4 | 0 | 0 |
+
+### 2010-02-11 start (representative close read)
+
+| Variant | State | Executions | Sell-down to target | Buy-up to target | No sleeve trade |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Sleeve exact | normalDca | 65 | 34 | 31 | 0 |
+| Sleeve exact | smallDipBuy | 25 | 7 | 18 | 0 |
+| Sleeve exact | bottomAttack | 6 | 2 | 4 | 0 |
+| Sleeve exact | rampTqqq | 24 | 9 | 15 | 0 |
+| Sleeve exact | trimHeat | 25 | 21 | 4 | 0 |
+| Sleeve exact | pauseAtHigh | 70 | 0 | 0 | 70 |
+| Sleeve exact | crashDefense | 0 | 0 | 0 | 0 |
+| Sleeve 2pp band | normalDca | 65 | 6 | 3 | 56 |
+| Sleeve 2pp band | smallDipBuy | 25 | 4 | 9 | 12 |
+| Sleeve 2pp band | bottomAttack | 6 | 1 | 4 | 1 |
+| Sleeve 2pp band | rampTqqq | 24 | 3 | 12 | 9 |
+| Sleeve 2pp band | trimHeat | 25 | 21 | 4 | 0 |
+| Sleeve 2pp band | pauseAtHigh | 70 | 0 | 0 | 70 |
+| Sleeve 2pp band | crashDefense | 0 | 0 | 0 | 0 |
+
+### Semantic notes (facts)
+
+- The frozen trimHeat mapping `max(10%, current weight x 11/12)` is two-way: when the pre-execution weight is below 10% it becomes a TQQQ BUY in a defensive month, contradicting the defensive-unwind intent. This actually fired: the exact variant bought TQQQ up to the 10% floor in 76 of 310 trimHeat months across all 11 starts (band variant: 77 of 310).
+- Sell-down-to-target is not confined to normal months. Exact variant across all 11 starts, 783 sell-down executions in total: 265 normalDca, 130 smallDipBuy (sold back to 10%), 53 bottomAttack (sold back to 25% when above), 97 rampTqqq (sold back to that month's ramp target when above), 234 trimHeat, 4 crashDefense — 518 (66.2%) happened outside normalDca, 280 of those in the other three build-up states.
+
+## Conclusion (facts only, no recommendation)
+
+This study refutes the frozen two-way target mapping. It does not prove that target-weight rebalancing itself is ineffective, and the shortfall cannot be attributed to the normal state alone.
+
+- Sell-downs are spread across every state, not just normalDca: 518 of the exact variant's 783 sell-down executions (66.2%) occurred outside normalDca — smallDipBuy 130, bottomAttack 53, rampTqqq 97, trimHeat 234, crashDefense 4.
+- The defensive mapping itself also deviates from intent: the frozen trimHeat formula bought TQQQ up to the 10% floor in 76 trimHeat months (band: 77), i.e. it adds exposure in defensive months whenever the pre-execution weight is below 10%.
+- The gate shortfall concentrates in the long-bull starts (2010-02-11, 2015-01-01, 2020-01-01, ratios 0.666-0.836), where the production strategy's accumulated buy-and-hold TQQQ position (average weights 22.4%-30.6%) dwarfs the sleeve's 13.6%-16.2%; in the 2023-2025 starts, where the sleeve holds more TQQQ than the current strategy, ratios are 1.006-1.020 and the 2024 drawdown gate breaches. The mapping moves exposure in both directions, and both directions show up in the outcome.
+
+### Per-start facts
 
 - 2010-02-11: current $2,407,714 vs exact $1,603,146 (0.666) vs band $1,606,030 (0.667); drawdown current -44.0% / exact -44.0% / band -44.2%; turnover current $2,750,901 / exact $1,769,281 / band $1,686,113; fees current $1,375 / exact $884 / band $843; avg TQQQ weight current 28.5% / exact 14.3% / band 14.1%.
 - 2015-01-01: current $739,600 vs exact $554,868 (0.750) vs band $554,715 (0.750); drawdown current -43.9% / exact -43.9% / band -44.0%; turnover current $844,287 / exact $579,386 / band $557,075; fees current $422 / exact $290 / band $278; avg TQQQ weight current 22.4% / exact 13.7% / band 13.6%.

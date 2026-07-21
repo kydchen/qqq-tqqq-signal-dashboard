@@ -644,7 +644,85 @@ function renderReport(study) {
   lines.push("");
   lines.push("The test suite re-derives the theoretical post-trade weights from the 5 bps ledger independently and asserts: exact-variant weights equal the ledger-derived theoretical weights within 1e-9 relative (no adjustable fee epsilon); band-variant weights sit within 2pp of the same theoretical weights (plus ledger friction) with pairwise differences within 4pp plus ledger friction.");
   lines.push("");
-  lines.push("## Preliminary readings (facts only, no recommendation)");
+
+  // ---- Action-level semantic audit. Derived from the recorded per-execution
+  // pre-rebalance weight and executed target (no backtest numbers change):
+  // target > pre => buy-up to target; target < pre => sell-down to target;
+  // equal => no sleeve trade (pauseAtHigh freeze, or inside the 2pp band).
+  const DIRECTION_EPS = 1e-9;
+  const ACTION_ORDER = ["normalDca", "smallDipBuy", "bottomAttack", "rampTqqq", "trimHeat", "pauseAtHigh", "crashDefense"];
+  const auditFor = (runs) => {
+    const out = [];
+    for (const variant of ["exact", "band"]) {
+      for (const key of ACTION_ORDER) {
+        const records = runs
+          .filter((run) => run.variant === variant)
+          .flatMap((run) => run.stats.execRecords)
+          .filter((record) => record.key === key);
+        let buyUp = 0;
+        let sellDown = 0;
+        let noTrade = 0;
+        for (const record of records) {
+          const diff = record.targetWeight - record.preTqqqWeight;
+          if (diff > DIRECTION_EPS) buyUp += 1;
+          else if (diff < -DIRECTION_EPS) sellDown += 1;
+          else noTrade += 1;
+        }
+        out.push({ variant, key, executions: records.length, buyUp, sellDown, noTrade });
+      }
+    }
+    return out;
+  };
+  const auditAll = auditFor(study.sleeveRuns);
+  const audit2010 = auditFor(study.sleeveRuns.filter((run) => run.start === "2010-02-11"));
+  const auditTable = (auditRows) => {
+    const out = [];
+    out.push("| Variant | State | Executions | Sell-down to target | Buy-up to target | No sleeve trade |");
+    out.push("| --- | --- | ---: | ---: | ---: | ---: |");
+    for (const row of auditRows) {
+      out.push(`| ${PLAN_LABELS[row.variant === "exact" ? "sleeve-exact" : "sleeve-2pp-band"]} | ${row.key} | ${row.executions} | ${row.sellDown} | ${row.buyUp} | ${row.noTrade} |`);
+    }
+    return out;
+  };
+  const auditCell = (auditRows, variant, key) => auditRows.find((row) => row.variant === variant && row.key === key);
+
+  lines.push("## Action-level semantic audit");
+  lines.push("");
+  lines.push("Per-execution direction of the sleeve rebalance, derived from the recorded pre-rebalance weight and the executed target (audit adds recording only; no backtest number changes). Sell-down = TQQQ sold down to the target weight; buy-up = TQQQ bought up to the target weight; no sleeve trade = pauseAtHigh freeze or a build-up month inside the 2pp band.");
+  lines.push("");
+  lines.push("### All 11 starts");
+  lines.push("");
+  lines.push(...auditTable(auditAll));
+  lines.push("");
+  lines.push("### 2010-02-11 start (representative close read)");
+  lines.push("");
+  lines.push(...auditTable(audit2010));
+  lines.push("");
+  const exactTrim = auditCell(auditAll, "exact", "trimHeat");
+  const bandTrim = auditCell(auditAll, "band", "trimHeat");
+  const exactNormal = auditCell(auditAll, "exact", "normalDca");
+  const exactDip = auditCell(auditAll, "exact", "smallDipBuy");
+  const exactBottom = auditCell(auditAll, "exact", "bottomAttack");
+  const exactRamp = auditCell(auditAll, "exact", "rampTqqq");
+  const exactCrash = auditCell(auditAll, "exact", "crashDefense");
+  const exactSellTotal = ACTION_ORDER.reduce((sum, key) => sum + auditCell(auditAll, "exact", key).sellDown, 0);
+  const nonNormalSell = exactSellTotal - exactNormal.sellDown;
+  const buildUpSellOutsideNormal = exactDip.sellDown + exactBottom.sellDown + exactRamp.sellDown;
+  const pctNonNormal = exactSellTotal > 0 ? (100 * nonNormalSell / exactSellTotal).toFixed(1) : "—";
+  lines.push("### Semantic notes (facts)");
+  lines.push("");
+  lines.push(`- The frozen trimHeat mapping \`max(10%, current weight x 11/12)\` is two-way: when the pre-execution weight is below 10% it becomes a TQQQ BUY in a defensive month, contradicting the defensive-unwind intent. This actually fired: the exact variant bought TQQQ up to the 10% floor in ${exactTrim.buyUp} of ${exactTrim.executions} trimHeat months across all 11 starts (band variant: ${bandTrim.buyUp} of ${bandTrim.executions}).`);
+  lines.push(`- Sell-down-to-target is not confined to normal months. Exact variant across all 11 starts, ${exactSellTotal} sell-down executions in total: ${exactNormal.sellDown} normalDca, ${exactDip.sellDown} smallDipBuy (sold back to 10%), ${exactBottom.sellDown} bottomAttack (sold back to 25% when above), ${exactRamp.sellDown} rampTqqq (sold back to that month's ramp target when above), ${exactTrim.sellDown} trimHeat, ${exactCrash.sellDown} crashDefense — ${nonNormalSell} (${pctNonNormal}%) happened outside normalDca, ${buildUpSellOutsideNormal} of those in the other three build-up states.`);
+  lines.push("");
+  lines.push("## Conclusion (facts only, no recommendation)");
+  lines.push("");
+  lines.push("This study refutes the frozen two-way target mapping. It does not prove that target-weight rebalancing itself is ineffective, and the shortfall cannot be attributed to the normal state alone.");
+  lines.push("");
+  lines.push(`- Sell-downs are spread across every state, not just normalDca: ${nonNormalSell} of the exact variant's ${exactSellTotal} sell-down executions (${pctNonNormal}%) occurred outside normalDca — smallDipBuy ${exactDip.sellDown}, bottomAttack ${exactBottom.sellDown}, rampTqqq ${exactRamp.sellDown}, trimHeat ${exactTrim.sellDown}, crashDefense ${exactCrash.sellDown}.`);
+  lines.push(`- The defensive mapping itself also deviates from intent: the frozen trimHeat formula bought TQQQ up to the 10% floor in ${exactTrim.buyUp} trimHeat months (band: ${bandTrim.buyUp}), i.e. it adds exposure in defensive months whenever the pre-execution weight is below 10%.`);
+  lines.push(`- The gate shortfall concentrates in the long-bull starts (2010-02-11, 2015-01-01, 2020-01-01, ratios 0.666-0.836), where the production strategy's accumulated buy-and-hold TQQQ position (average weights 22.4%-30.6%) dwarfs the sleeve's 13.6%-16.2%; in the 2023-2025 starts, where the sleeve holds more TQQQ than the current strategy, ratios are 1.006-1.020 and the 2024 drawdown gate breaches. The mapping moves exposure in both directions, and both directions show up in the outcome.`);
+  lines.push("");
+  lines.push("### Per-start facts");
   lines.push("");
   for (const row of gateRows) {
     lines.push(`- ${row.start}: current ${fmtUsd(row.current.finalValue)} vs exact ${fmtUsd(row.exact.finalValue)} (${fmtRatio3(row.exactRatio)}) vs band ${fmtUsd(row.band.finalValue)} (${fmtRatio3(row.bandRatio)}); drawdown current ${fmtPct(row.current.maxDrawdown)} / exact ${fmtPct(row.exact.maxDrawdown)} / band ${fmtPct(row.band.maxDrawdown)}; turnover current ${fmtUsd(row.current.turnover)} / exact ${fmtUsd(row.exact.turnover)} / band ${fmtUsd(row.band.turnover)}; fees current ${fmtUsd(row.current.fees)} / exact ${fmtUsd(row.exact.fees)} / band ${fmtUsd(row.band.fees)}; avg TQQQ weight current ${fmtPct(row.current.avgTqqqWeight)} / exact ${fmtPct(row.exact.avgTqqqWeight)} / band ${fmtPct(row.band.avgTqqqWeight)}.`);
