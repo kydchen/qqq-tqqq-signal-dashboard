@@ -1265,7 +1265,10 @@ function stateAt(index, prices, nasdaq, vixByDate, capeChrono, capeCursor) {
 // are kept, the rolling high uses a monotonic deque (max is order-independent),
 // the VIX 5-day average uses a forward cursor (dates are sorted), and the CAPE
 // percentile is memoized per month because the CAPE cursor only moves monthly.
-function buildStates(prices, nasdaq, vix, capeChrono) {
+// The optional capePercentileFn is a research-only injection seam (used by
+// scripts/cape-percentile-convention-study.cjs); the default is the production
+// capePercentileAt, so every existing call is behaviorally unchanged.
+function buildStates(prices, nasdaq, vix, capeChrono, capePercentileFn = capePercentileAt) {
   const count = prices.length;
   const states = new Array(count).fill(null);
   if (count <= 30) return states;
@@ -1303,7 +1306,7 @@ function buildStates(prices, nasdaq, vix, capeChrono) {
     while (vixIndex + 1 < vix.length && vix[vixIndex + 1].date <= date) vixIndex += 1;
     while (capeIndex + 1 < capeChrono.length && capeChrono[capeIndex + 1].date <= date) capeIndex += 1;
     if (computedCapeIndex !== capeIndex) {
-      capePercentile = capePercentileAt(capeChrono, capeIndex);
+      capePercentile = capePercentileFn(capeChrono, capeIndex);
       computedCapeIndex = capeIndex;
     }
     const current5 = avg5[i];
@@ -1948,4 +1951,9 @@ module.exports = {
   // Appended for scripts/tqqq-sleeve-study.cjs: reuse the production cash-drip
   // rule verbatim instead of copying it. Purely additive; no logic changed.
   monthlySpendWithDrip,
+  // Appended for scripts/cape-percentile-convention-study.cjs: lets the study
+  // regression-test that passing the production percentile explicitly through
+  // the buildStates seam is byte-identical to the default call. Purely
+  // additive; no logic changed.
+  capePercentileAt,
 };
