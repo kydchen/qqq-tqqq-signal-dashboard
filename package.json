@@ -5,7 +5,8 @@
   "description": "Local-first QQQ/TQQQ decision cockpit with versioned evidence, next-session execution, and manual order drafts.",
   "scripts": {
     "dev": "node dev-server.cjs",
-    "test": "node --test test/*.test.cjs && node scripts/check.cjs",
+    "test": "node --test test/execution-planner.test.cjs test/month-machine.test.cjs test/state-consistency.test.cjs test/response-contract.test.cjs && node scripts/check.cjs",
+    "test:research": "node --test test/baseline-study.test.cjs test/tqqq-sleeve.test.cjs test/state-attribution.test.cjs test/oneway-floor.test.cjs test/cape-percentile-convention-study.test.cjs",
     "check": "node scripts/check.cjs",
     "check:live": "LIVE=1 node scripts/check.cjs",
     "update-data": "node scripts/update-data.cjs"

@@ -121,10 +121,12 @@ http://127.0.0.1:8765
 
 ```bash
 npm test
-npm run check
+npm run test:research
 ```
 
-The default test command runs all ten supported start-window audits against versioned snapshots; live upstream access is not required.
+`npm test` is the production gate: engine unit/integration tests plus `scripts/check.cjs` audits across all ten supported start windows against versioned snapshots. It must pass after every snapshot update; live upstream access is not required.
+
+`npm run test:research` runs the frozen pre-registered research studies (baseline, TQQQ sleeve, single-state attribution, one-way floor, CAPE convention). These pin a specific data snapshot; once the bundled data moves past their frozen snapshot, their tests skip automatically instead of failing, so snapshot updates never break the suite.
 
 Live upstream smoke test:
 
