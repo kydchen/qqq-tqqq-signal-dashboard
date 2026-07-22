@@ -28,6 +28,7 @@ function assertFinite(value, label) {
 function assertBacktestResult(result, start) {
   assert.equal(result.rulesetId, RULESET_ID);
   assert.match(result.dataSnapshotId, /^snapshot-[a-f0-9]{16}$/);
+  assert(!("generatedAt" in result), "backtest response must not contain generatedAt (deterministic contract)");
   assert.equal(result.costBps, DEFAULT_COST_BPS);
   assert.equal(result.executionLag, "nextTradingSession");
   assert.equal(result.coreQqqHighRegimeFraction, CORE_QQQ_HIGH_REGIME_FRACTION);
@@ -186,6 +187,15 @@ async function main() {
   assert(appJs.includes("ExecutionPlanner.planOrders"));
   assert(exportCsvBody.includes("visibleStrategies()"));
   assert(!exportCsvBody.includes("backtestData.strategies"));
+  // Front-end backtest cache wiring pins.
+  assert(appJs.includes("const backtestCache = BacktestCache.create();"));
+  assert(appJs.includes("BacktestCache.fetchCached(backtestCache, { start, cost }, fetchJson)"));
+  assert(appJs.includes("BacktestCache.clear(backtestCache)"), "manual refresh must clear the backtest cache");
+  const backtestCacheJs = fs.readFileSync(path.join(__dirname, "../assets/backtest-cache.js"), "utf8");
+  assert(backtestCacheJs.includes('"qqq,signalQqq,tqqq,signalTqqq,signal"'), "cache module must pin the five visible strategies");
+  const indexHtml = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+  assert(indexHtml.includes("/assets/backtest-cache.js"), "index.html must load the cache module");
+  assert(indexHtml.indexOf("/assets/backtest-cache.js") < indexHtml.indexOf("/assets/app.js"), "cache module must load before app.js");
 
   const deterministic = await backtest({ start: "2010-01", cost: 5 });
   assertBacktestResult(deterministic, "2010-01");

@@ -553,6 +553,35 @@ function normalizeCostBps(rawCostBps = DEFAULT_COST_BPS) {
   return costBps;
 }
 
+// Strategy allowlist for the `strategies=` query parameter. Trimming only
+// cuts the returned JSON; the backtest engine always computes every sleeve.
+const ALL_STRATEGY_KEYS = Object.freeze(["qqq", "tqqq", "blend8020", "signal", "signalQqq", "signalTqqq"]);
+// qqq and signal are always returned: the edge conclusion, event cards, and
+// execution notes depend on them even when the caller did not ask for them.
+const MANDATORY_STRATEGY_KEYS = Object.freeze(["qqq", "signal"]);
+
+function normalizeStrategiesParam(raw) {
+  if (raw == null || String(raw).trim() === "") return null;
+  const requested = String(raw).split(",").map((key) => key.trim()).filter(Boolean);
+  const unknown = requested.filter((key) => !ALL_STRATEGY_KEYS.includes(key));
+  if (unknown.length) {
+    throw new HttpError(400, `Unknown strategies: ${unknown.join(", ")}. Valid keys: ${ALL_STRATEGY_KEYS.join(", ")}.`);
+  }
+  return new Set([...MANDATORY_STRATEGY_KEYS, ...requested]);
+}
+
+function applyStrategyFilter(result, strategyFilter) {
+  if (!strategyFilter) return result;
+  return {
+    ...result,
+    strategies: result.strategies.filter((strategy) => strategyFilter.has(strategy.key)),
+    events: result.events.map((event) => ({
+      ...event,
+      strategies: event.strategies.filter((strategy) => strategyFilter.has(strategy.key)),
+    })),
+  };
+}
+
 function calculateDecision(state, memory = {}, thresholds = DEFAULT_THRESHOLDS) {
   const { lowSignals, softSignals, defensiveFlags, lowSignalCount } = signalGroups(state, thresholds);
   const isHeat = isHeatRegime(defensiveFlags);
@@ -1772,10 +1801,11 @@ function runStaticAllocation(data, startDate, monthlyAmount, allocation, costBps
   return { portfolio, finalPrices: previousPrice || prices.at(-1) };
 }
 
-async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_COST_BPS } = {}) {
+async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_COST_BPS, strategies: rawStrategies = null } = {}) {
   const startDate = normalizeStart(start);
   const monthlyAmount = normalizeMonthly(monthly);
   const costBps = normalizeCostBps(cost);
+  const strategyFilter = normalizeStrategiesParam(rawStrategies);
   const data = loadSnapshotData();
   const dataSnapshotId = buildDataSnapshotId(data);
   const prices = buildPrices(data.nasdaq, data.qqq, data.tqqq, data.rates);
@@ -1805,8 +1835,7 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
   const allocationMatchedRisk = riskStats(allocationMatchedRun.portfolio.points);
   const allocationMatchedFinalValue = valueOf(allocationMatchedRun.portfolio, allocationMatchedRun.finalPrices);
   const signalVsStatic = relativeEdge(signalEvidence.points, allocationMatchedRun.portfolio.points);
-  return {
-    generatedAt: new Date().toISOString(),
+  const result = {
     rulesetId: RULESET_ID,
     mainSignalPolicy: MAIN_SIGNAL_POLICY_KEY,
     coreQqqHighRegimeFraction: CORE_QQQ_HIGH_REGIME_FRACTION,
@@ -1868,6 +1897,9 @@ async function backtest({ start = "2010-02-11", monthly = 1000, cost = DEFAULT_C
     events: eventRecaps(strategies),
     walkForward: walkForward(data, startDate, monthlyAmount, states, costBps),
   };
+  // The strategies= allowlist trims the returned JSON only; the engine above
+  // always computed every sleeve.
+  return applyStrategyFilter(result, strategyFilter);
 }
 
 module.exports = {
