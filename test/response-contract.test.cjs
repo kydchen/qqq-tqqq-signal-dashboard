@@ -9,7 +9,7 @@ const BacktestCache = require("../assets/backtest-cache.js");
 const ALL_KEYS = ["qqq", "tqqq", "blend8020", "signal", "signalQqq", "signalTqqq"];
 const VISIBLE_KEYS = ["qqq", "signalQqq", "tqqq", "signalTqqq", "signal"];
 
-test("no strategies parameter returns the full legacy contract", async () => {
+test("no strategies parameter returns the full legacy strategy set", async () => {
   const result = await backtest({ start: "2015-01-01", cost: 5 });
   assert.deepEqual(result.strategies.map((strategy) => strategy.key), ALL_KEYS);
   assert(result.events.length > 0);
