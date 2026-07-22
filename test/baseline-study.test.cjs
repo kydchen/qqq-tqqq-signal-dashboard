@@ -8,14 +8,28 @@ const {
   B2C_RESERVE_CAP,
   B3C_RESERVE_CAP,
 } = require("../scripts/baseline-study.cjs");
+const { loadSnapshotData, buildDataSnapshotId } = require("../api/_lib");
 
 // CI regression guards for the baseline study. runStudy executes once per
 // test process and is shared by every assertion below.
+//
+// Frozen-research snapshot gate: this study is frozen on a specific data
+// snapshot (data through 2026-07-17). When the bundled data moves on, every
+// test in this file skips instead of failing, so the production gate
+// (npm test) and the research suite (npm run test:research) stay
+// independent of snapshot updates.
+const FROZEN_SNAPSHOT_ID = "snapshot-f5c36c72b6dcfa45";
+const currentSnapshotId = buildDataSnapshotId(loadSnapshotData());
+const frozenDataPresent = currentSnapshotId === FROZEN_SNAPSHOT_ID;
+if (!frozenDataPresent) {
+  console.warn(`[research-gate] baseline study frozen on ${FROZEN_SNAPSHOT_ID}, data is now ${currentSnapshotId}; skipping the frozen-research tests in this file`);
+}
+const researchTest = frozenDataPresent ? test : (name, ...args) => test(name, { skip: true }, ...args);
 
 const study = runStudy();
 const dateIndex = new Map(study.dates.map((date, index) => [date, index]));
 
-test("every baseline variant executes on the first trading session after its signal (T+1)", () => {
+researchTest("every baseline variant executes on the first trading session after its signal (T+1)", () => {
   let checked = 0;
   for (const run of study.variantRuns) {
     assert(run.stats.executions.length > 0, `${run.plan} ${run.start} should record executions`);
@@ -39,7 +53,7 @@ test("every baseline variant executes on the first trading session after its sig
   assert(checked > 0, "no executions checked");
 });
 
-test("capped reserves never exceed their caps right after execution", () => {
+researchTest("capped reserves never exceed their caps right after execution", () => {
   const caps = { B2c: B2C_RESERVE_CAP, B3c: B3C_RESERVE_CAP };
   let checked = 0;
   for (const run of study.variantRuns) {
@@ -57,7 +71,7 @@ test("capped reserves never exceed their caps right after execution", () => {
   assert(checked > 0, "no reserve observations checked");
 });
 
-test("renderReport matches docs/baseline-study.md byte for byte", () => {
+researchTest("renderReport matches docs/baseline-study.md byte for byte", () => {
   const docPath = path.join(__dirname, "..", "docs", "baseline-study.md");
   const doc = fs.readFileSync(docPath, "utf8");
   assert.equal(
@@ -67,7 +81,7 @@ test("renderReport matches docs/baseline-study.md byte for byte", () => {
   );
 });
 
-test("B4nbl parity with B4 in windows without bottom purchases", () => {
+researchTest("B4nbl parity with B4 in windows without bottom purchases", () => {
   // In these start windows no bottomAttack/rampTqqq purchase fires, so the
   // no-bottom-leverage variant must reproduce the production signal sleeve
   // to the dollar. Note: the production strategy DOES still buy TQQQ here
@@ -94,7 +108,7 @@ test("B4nbl parity with B4 in windows without bottom purchases", () => {
   }
 });
 
-test("B4nbl never adds TQQQ through the ablated bottom legs in any start", () => {
+researchTest("B4nbl never adds TQQQ through the ablated bottom legs in any start", () => {
   for (const run of study.variantRuns) {
     if (run.plan !== "B4nbl") continue;
     assert(

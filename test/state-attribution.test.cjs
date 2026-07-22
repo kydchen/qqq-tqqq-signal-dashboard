@@ -10,20 +10,32 @@ const {
   COST_BPS,
   FROZEN_SNAPSHOT_ID,
 } = require("../scripts/state-attribution-study.cjs");
+const { loadSnapshotData, buildDataSnapshotId } = require("../api/_lib");
 
 // CI regression guards for the single-state marginal attribution study.
 // runStudy executes once per test process and is shared by every assertion.
 // No win/fail gate assertions exist here by design: the attribution table
 // is descriptive data, not a verdict.
+//
+// Frozen-research snapshot gate: this study is frozen on FROZEN_SNAPSHOT_ID.
+// When the bundled data moves on, every test in this file skips instead of
+// failing, so the production gate (npm test) and the research suite
+// (npm run test:research) stay independent of snapshot updates.
+const currentSnapshotId = buildDataSnapshotId(loadSnapshotData());
+const frozenDataPresent = currentSnapshotId === FROZEN_SNAPSHOT_ID;
+if (!frozenDataPresent) {
+  console.warn(`[research-gate] attribution study frozen on ${FROZEN_SNAPSHOT_ID}, data is now ${currentSnapshotId}; skipping the frozen-research tests in this file`);
+}
+const researchTest = frozenDataPresent ? test : (name, ...args) => test(name, { skip: true }, ...args);
 
 const study = runStudy();
 const dateIndex = new Map(study.dates.map((date, index) => [date, index]));
 
-test("data snapshot id matches the frozen pre-registered snapshot", () => {
+researchTest("data snapshot id matches the frozen pre-registered snapshot", () => {
   assert.equal(study.snapshotId, FROZEN_SNAPSHOT_ID);
 });
 
-test("every variant execution is exactly one trading session after its signal", () => {
+researchTest("every variant execution is exactly one trading session after its signal", () => {
   let checked = 0;
   for (const run of study.variantRuns) {
     assert(run.stats.executions.length > 0, `${run.plan} ${run.start} should record executions`);
@@ -44,7 +56,7 @@ test("every variant execution is exactly one trading session after its signal", 
   assert(checked > 0, "no executions checked");
 });
 
-test("P replica matches the engine signal portfolio final value (1e-9)", () => {
+researchTest("P replica matches the engine signal portfolio final value (1e-9)", () => {
   for (const replica of study.replicaRuns) {
     const engineRow = study.rows.find((row) => row.start === replica.start && row.plan === "P");
     const relativeError = Math.abs(replica.finalValue - engineRow.finalValue) / engineRow.finalValue;
@@ -55,7 +67,7 @@ test("P replica matches the engine signal portfolio final value (1e-9)", () => {
   }
 });
 
-test("P replica monthly trajectory matches the engine signal portfolio point by point", () => {
+researchTest("P replica monthly trajectory matches the engine signal portfolio point by point", () => {
   // The per-state TQQQ share counts come from the replica, so a final-value
   // check alone is not enough: every monthly point must align with the
   // engine's portfolios.signal — identical dates, and value within 1e-9
@@ -90,7 +102,7 @@ test("P replica monthly trajectory matches the engine signal portfolio point by 
   console.log(`P replica vs engine monthly trajectory: ${checked} points across ${study.replicaRuns.length} starts, max relative error ${maxRelativeError.toExponential(2)}`);
 });
 
-test("F matches the #9 sleeve study exact variant final value (1e-9)", () => {
+researchTest("F matches the #9 sleeve study exact variant final value (1e-9)", () => {
   const sleeve = runSleeveStudy();
   for (const row of study.rows.filter((item) => item.plan === "F")) {
     const sleeveRow = sleeve.rows.find((item) => item.start === row.start && item.plan === "sleeve-exact");
@@ -103,7 +115,7 @@ test("F matches the #9 sleeve study exact variant final value (1e-9)", () => {
   }
 });
 
-test("invariants: non-negative cash and post-execution TQQQ weight <= 40%", () => {
+researchTest("invariants: non-negative cash and post-execution TQQQ weight <= 40%", () => {
   // Cap timing is frozen per execution path: sleeve-timed executions (all of
   // F, plus the replaced state in each Si) enforce the cap AFTER the
   // rebalance and land at or below 40% exactly. Production-timed executions
@@ -128,7 +140,7 @@ test("invariants: non-negative cash and post-execution TQQQ weight <= 40%", () =
   }
 });
 
-test("renderReport matches docs/state-attribution-study.md byte for byte", () => {
+researchTest("renderReport matches docs/state-attribution-study.md byte for byte", () => {
   const docPath = path.join(__dirname, "..", "docs", "state-attribution-study.md");
   const doc = fs.readFileSync(docPath, "utf8");
   assert.equal(

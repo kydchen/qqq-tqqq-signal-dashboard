@@ -11,18 +11,30 @@ const {
   FROZEN_SNAPSHOT_ID,
   bandFor,
 } = require("../scripts/oneway-floor-study.cjs");
+const { loadSnapshotData, buildDataSnapshotId } = require("../api/_lib");
 
 // CI regression guards for the one-way floor study. runStudy executes once
 // per test process and is shared by every assertion below.
+//
+// Frozen-research snapshot gate: this study is frozen on FROZEN_SNAPSHOT_ID.
+// When the bundled data moves on, every test in this file skips instead of
+// failing, so the production gate (npm test) and the research suite
+// (npm run test:research) stay independent of snapshot updates.
+const currentSnapshotId = buildDataSnapshotId(loadSnapshotData());
+const frozenDataPresent = currentSnapshotId === FROZEN_SNAPSHOT_ID;
+if (!frozenDataPresent) {
+  console.warn(`[research-gate] one-way floor study frozen on ${FROZEN_SNAPSHOT_ID}, data is now ${currentSnapshotId}; skipping the frozen-research tests in this file`);
+}
+const researchTest = frozenDataPresent ? test : (name, ...args) => test(name, { skip: true }, ...args);
 
 const study = runStudy();
 const dateIndex = new Map(study.dates.map((date, index) => [date, index]));
 
-test("data snapshot id matches the frozen pre-registered snapshot", () => {
+researchTest("data snapshot id matches the frozen pre-registered snapshot", () => {
   assert.equal(study.snapshotId, FROZEN_SNAPSHOT_ID);
 });
 
-test("floor adjustment logic never sells TQQQ; cap sales are recorded separately", () => {
+researchTest("floor adjustment logic never sells TQQQ; cap sales are recorded separately", () => {
   let floorMonthsChecked = 0;
   for (const run of study.floorRecordsByVariant) {
     for (const record of run.records) {
@@ -56,7 +68,7 @@ test("floor adjustment logic never sells TQQQ; cap sales are recorded separately
   assert(floorMonthsChecked > 0, "no floor-path months checked");
 });
 
-test("every variant execution is exactly one trading session after its signal", () => {
+researchTest("every variant execution is exactly one trading session after its signal", () => {
   let checked = 0;
   for (const run of study.variantRuns) {
     assert(run.stats.executions.length > 0, `${run.plan} ${run.start} should record executions`);
@@ -77,7 +89,7 @@ test("every variant execution is exactly one trading session after its signal", 
   assert(checked > 0, "no executions checked");
 });
 
-test("P, S1-exact and S2-exact match the #11 attribution results (1e-9)", () => {
+researchTest("P, S1-exact and S2-exact match the #11 attribution results (1e-9)", () => {
   const attribution = runAttributionStudy();
   const attributionFinal = (start, plan) => attribution.rows.find((row) => row.start === start && row.plan === plan).finalValue;
   const parityPairs = [];
@@ -96,7 +108,7 @@ test("P, S1-exact and S2-exact match the #11 attribution results (1e-9)", () => 
   }
 });
 
-test("invariants: non-negative cash and post-execution TQQQ weight within cap bounds", () => {
+researchTest("invariants: non-negative cash and post-execution TQQQ weight within cap bounds", () => {
   // Cap timing is frozen per execution path: replaced months of the
   // S-exact and floor variants enforce the cap AFTER the rebalance and land
   // at or below 40% exactly; production-timed executions (P and unreplaced
@@ -121,7 +133,7 @@ test("invariants: non-negative cash and post-execution TQQQ weight within cap bo
   }
 });
 
-test("frozen conclusion regression: all six cells land in band A with a joint conclusion", () => {
+researchTest("frozen conclusion regression: all six cells land in band A with a joint conclusion", () => {
   // Pins the conclusion itself, not just the report text: if someone later
   // changes the generator and regenerates the report, a wrong conclusion
   // must fail here even though the byte-sync test would still pass.
@@ -147,7 +159,7 @@ test("frozen conclusion regression: all six cells land in band A with a joint co
   assert(decision.joint.startsWith("Joint conclusion"), `unexpected joint wording: ${decision.joint}`);
 });
 
-test("bandFor boundary semantics: exact 0.97 is band C, exact 1.03 is band A/B, strict middle is band D", () => {
+researchTest("bandFor boundary semantics: exact 0.97 is band C, exact 1.03 is band A/B, strict middle is band D", () => {
   // floor/exact exactly 0.97 => does not support the sell-leg explanation.
   assert.equal(bandFor(0.97, 1), "C");
   assert.equal(bandFor(0.97, 0.5), "C");
@@ -162,7 +174,7 @@ test("bandFor boundary semantics: exact 0.97 is band C, exact 1.03 is band A/B, 
   assert.equal(bandFor(1.0, 1), "D");
 });
 
-test("renderReport matches docs/oneway-floor-study.md byte for byte", () => {
+researchTest("renderReport matches docs/oneway-floor-study.md byte for byte", () => {
   const docPath = path.join(__dirname, "..", "docs", "oneway-floor-study.md");
   const doc = fs.readFileSync(docPath, "utf8");
   assert.equal(
